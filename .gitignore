@@ -1,0 +1,32 @@
+# Build artifacts
+build/
+dist/
+*.app/
+*.spec.bak
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# PyInstaller
+*.manifest
+*.spec~
+
+# Test files
+test*.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
