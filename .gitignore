@@ -1,8 +1,9 @@
 # Build artifacts
 build/
 dist/
-*.app/
+*.app
 *.spec.bak
+*.pkg
 
 # Python
 __pycache__/

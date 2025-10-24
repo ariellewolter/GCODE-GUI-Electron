@@ -63,8 +63,24 @@ The packaged app will be in `dist/GCode Generator - 24 Well.app`
 - **Dots Per Row**: 10
 - **Dot Spacing X**: 0.3 mm
 - **Dot Spacing Y**: 1.5 mm
-- **Lower Z**: 2.35 mm
-- **Upper Z**: 2.40 mm
+- **Well Bottom (Built-in Constant)**: 2.35 mm
+- **Lower Z Offset**: 1.5 mm (entered value is offset above well bottom)
+- **Upper Z Offset**: 1.51 mm (entered value is offset above well bottom)
+
+## Z-Height System
+
+The app uses a **relative offset system** for Z-heights:
+- **Well bottom is built-in** at 2.35 mm (hardcoded for safety)
+- **You enter offsets** above the well bottom (e.g., 1.5 mm)
+- **Generated G-code uses absolute positions** (well bottom + your offset)
+- Example: Entering 1.5 mm generates G-code with Z = 3.85 mm (2.35 + 1.5)
+
+## Safety Features
+
+- **Negative Offset Protection**: The app prevents negative Z offsets that would go below well bottom
+- **Built-in Well Bottom**: Well bottom height is hardcoded and automatically added to your offsets
+- **Visual Information**: Blue label in GUI shows the built-in well bottom value
+- **G-code Comments**: Generated files show both your offset and the resulting absolute Z position
 
 ## Well Plate Coordinates
 

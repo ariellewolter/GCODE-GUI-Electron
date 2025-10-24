@@ -2,6 +2,13 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import datetime
 
+# Define well bottom height constant - DO NOT GO BELOW THIS OR NEEDLE WILL BREAK
+WELL_BOTTOM_Z = 2.35  # mm - absolute minimum safe Z height
+
+# Default Z offsets from well bottom
+DEFAULT_LOWER_Z_OFFSET = 1.5   # mm above well bottom
+DEFAULT_UPPER_Z_OFFSET = 1.51  # mm above well bottom
+
 # Define standard well positions for 24-well plate
 WELL_POSITIONS = {
     'A1': (37.55, 46.3),
@@ -36,15 +43,16 @@ def generate_dot_series_gcode(start_x, start_y, num_dots, dot_spacing_x, dot_spa
     # Get the current date and time
     current_date = datetime.datetime.now().strftime("%d-%b-%Y %H:%M:%S")
 
+    # Calculate absolute Z positions from offsets
+    absolute_lower_z = WELL_BOTTOM_Z + lower_z
+    absolute_upper_z = WELL_BOTTOM_Z + upper_z
+    
     with open(output_path, 'w') as file:
         # Custom heading with dynamic date of generation and customizable well number
         file.write(f"; Experiment g-Code developed on: {current_date}\n")
-        file.write("; BottomElevation: 2.35\n")
-        file.write("; Zbottom:\n")
-        file.write("; Zplus:\n")
-        file.write("; Zplusplus:\n")
-        file.write("; Zvoid:\n")
-        file.write("; num2str(t) ;Working on 24 WELL TRAY\n\n")
+        file.write(f"; Lower Z offset: {lower_z:.2f} mm (Absolute Z: {absolute_lower_z:.2f} mm)\n")
+        file.write(f"; Upper Z offset: {upper_z:.2f} mm (Absolute Z: {absolute_upper_z:.2f} mm)\n")
+        file.write("; Working on 24 WELL TRAY\n\n")
         file.write(f"; Well number {well_number}\n")
 
         # G-code file header
@@ -62,9 +70,9 @@ def generate_dot_series_gcode(start_x, start_y, num_dots, dot_spacing_x, dot_spa
             file.write("G4 P200 ; Dwell for 200ms\n")
             file.write("G1 Z3.28 F250 ; Lower to dot height\n")
             file.write("G4 P200 ; Dwell for 200ms\n")
-            file.write(f"G1 Z{lower_z:.2f} F30 ; Lower to printing height\n")
+            file.write(f"G1 Z{absolute_lower_z:.2f} F30 ; Lower to printing height\n")
             file.write("G4 P500 ; Dwell for 500ms\n")
-            file.write(f"G1 Z{upper_z:.2f} E0.0105 F3 ; Extrude dot\n")
+            file.write(f"G1 Z{absolute_upper_z:.2f} E0.0105 F3 ; Extrude dot\n")
             file.write("G4 S1.5 ; Dwell for 1.5 seconds\n")
             file.write("G1 Z2.88 F80 ; Raise nozzle slightly after printing\n")
             file.write("G4 P750 ; Dwell for 750ms\n")
@@ -118,6 +126,15 @@ def save_gcode():
         
         if dots_per_row <= 0:
             messagebox.showerror("Error", "Dots per row must be greater than 0.")
+            return
+        
+        # Safety check: prevent negative offsets (would go below well bottom and break needle!)
+        if lower_z < 0:
+            messagebox.showerror("Error", f"Lower Z offset ({lower_z:.2f} mm) is negative!\nThis would go below the well bottom and BREAK THE NEEDLE!")
+            return
+        
+        if upper_z < 0:
+            messagebox.showerror("Error", f"Upper Z offset ({upper_z:.2f} mm) is negative!\nThis would go below the well bottom and BREAK THE NEEDLE!")
             return
 
         # Create the output file path using the well number and lower Z entry
@@ -175,11 +192,14 @@ tk.Label(root, text="Dot Spacing Y (mm):").pack(anchor='w', padx=20, pady=(5, 0)
 dot_spacing_y_entry = tk.Entry(root, width=42)
 dot_spacing_y_entry.pack(padx=20, pady=(0, 5))
 
-tk.Label(root, text="Lower Z (mm):").pack(anchor='w', padx=20, pady=(5, 0))
+tk.Label(root, text=f"⚠️  Well Bottom: {WELL_BOTTOM_Z} mm (built-in)", 
+         fg='blue', font=('Helvetica', 9, 'bold')).pack(anchor='w', padx=20, pady=(10, 5))
+
+tk.Label(root, text="Lower Z Offset (mm above well bottom):").pack(anchor='w', padx=20, pady=(5, 0))
 lower_z_entry = tk.Entry(root, width=42)
 lower_z_entry.pack(padx=20, pady=(0, 5))
 
-tk.Label(root, text="Upper Z (mm):").pack(anchor='w', padx=20, pady=(5, 0))
+tk.Label(root, text="Upper Z Offset (mm above well bottom):").pack(anchor='w', padx=20, pady=(5, 0))
 upper_z_entry = tk.Entry(root, width=42)
 upper_z_entry.pack(padx=20, pady=(0, 5))
 
@@ -195,8 +215,8 @@ dots_per_row_entry.pack(padx=20, pady=(0, 5))
 num_dots_entry.insert(0, "100")
 dot_spacing_x_entry.insert(0, "0.3")
 dot_spacing_y_entry.insert(0, "1.5")
-lower_z_entry.insert(0, "2.35")
-upper_z_entry.insert(0, "2.40")
+lower_z_entry.insert(0, str(DEFAULT_LOWER_Z_OFFSET))  # 1.5mm offset above well bottom
+upper_z_entry.insert(0, str(DEFAULT_UPPER_Z_OFFSET))  # 1.51mm offset above well bottom
 dots_per_row_entry.insert(0, "10")
 
 # Initialize with default well position (A1)
