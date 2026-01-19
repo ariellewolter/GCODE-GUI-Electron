@@ -85,10 +85,13 @@ def show_about():
 def generate_dot_series_gcode(start_x, start_y, num_dots, dot_spacing_x, dot_spacing_y,
                               lower_z, upper_z, well_number, dots_per_row, output_path, annotate=False):
     current_date = datetime.datetime.now().strftime("%d-%b-%Y %H:%M:%S")
-    abs_lower = WELL_BOTTOM_Z + lower_z
-    abs_upper = WELL_BOTTOM_Z + upper_z
-    z_retract = 2.88
-    z_safe = 5.0
+    # Use lower_z and upper_z as absolute Z values directly
+    abs_lower = lower_z
+    abs_upper = upper_z
+    # Fixed approach, retract, and safe heights
+    z_approach = 4.71
+    z_retract = 4.31  # Fixed retract height
+    z_safe = 6.21  # Fixed safe height
     z_final = 23.0
     
     # Determine row number from well letter (A=1, B=2, C=3, D=4)
@@ -119,33 +122,33 @@ def generate_dot_series_gcode(start_x, start_y, num_dots, dot_spacing_x, dot_spa
                     break
                 x = start_x + c * dot_spacing_x
                 y = start_y + r * dot_spacing_y
-                f.write(f"\n; === Dot {dot_index+1} at X={x:.2f}, Y={y:.2f} ===\n")
+                f.write(f"\n; Begin dot {dot_index+1}\n")
                 
                 if annotate:
                     f.write(f"G1 X{x:.2f} Y{y:.2f} F350  ; Move to dot position (X, Y) at 350 mm/min\n")
                     f.write(f"G4 P200                ; Pause 200ms to stabilize\n")
-                    f.write(f"G1 Z3.28 F250          ; Move down to approach height at 250 mm/min\n")
+                    f.write(f"G1 Z{z_approach:.2f} F250          ; Move down to approach height at 250 mm/min\n")
                     f.write(f"G4 P200                ; Pause 200ms\n")
                     f.write(f"G1 Z{abs_lower:.2f} F30        ; Slowly descend to lower position ({abs_lower:.2f}mm) at 30 mm/min\n")
                     f.write(f"G4 P500                ; Pause 500ms at lower position\n")
-                    f.write(f"G1 Z{abs_upper:.2f} E0.0105 F3 ; Move up to upper position ({abs_upper:.2f}mm), extrude 0.0105, slow at 3 mm/min\n")
+                    f.write(f"G1 Z{abs_upper:.2f} E 0.0105 F3 ; Move up to upper position ({abs_upper:.2f}mm), extrude 0.0105, slow at 3 mm/min\n")
                     f.write(f"G4 S1.5                ; Wait 1.5 seconds for dispensing\n")
-                    f.write(f"G1 Z2.88 F80           ; Retract to 2.88mm at 80 mm/min\n")
+                    f.write(f"G1 Z{z_retract:.2f} F80           ; Retract to {z_retract:.2f}mm at 80 mm/min\n")
                     f.write(f"G4 P750                ; Pause 750ms\n")
-                    f.write(f"G1 Z5 F350             ; Lift to safe height (5mm) at 350 mm/min\n")
+                    f.write(f"G1 Z{z_safe:.2f} F350             ; Lift to safe height ({z_safe:.2f}mm) at 350 mm/min\n")
                     f.write(f"G4 P200                ; Final pause 200ms\n")
                 else:
                     f.write(f"G1 X{x:.2f} Y{y:.2f} F350\n")
                     f.write(f"G4 P200\n")
-                    f.write(f"G1 Z3.28 F250\n")
+                    f.write(f"G1 Z{z_approach:.2f} F250\n")
                     f.write(f"G4 P200\n")
                     f.write(f"G1 Z{abs_lower:.2f} F30\n")
                     f.write(f"G4 P500\n")
-                    f.write(f"G1 Z{abs_upper:.2f} E0.0105 F3\n")
+                    f.write(f"G1 Z{abs_upper:.2f} E 0.0105 F3\n")
                     f.write(f"G4 S1.5\n")
-                    f.write(f"G1 Z2.88 F80\n")
+                    f.write(f"G1 Z{z_retract:.2f} F80\n")
                     f.write(f"G4 P750\n")
-                    f.write(f"G1 Z5 F350\n")
+                    f.write(f"G1 Z{z_safe:.2f} F350\n")
                     f.write(f"G4 P200\n")
                 dot_index += 1
 
