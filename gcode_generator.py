@@ -87,17 +87,29 @@ def generate_dot_series_gcode(start_x, start_y, num_dots, dot_spacing_x, dot_spa
     current_date = datetime.datetime.now().strftime("%d-%b-%Y %H:%M:%S")
     abs_lower = WELL_BOTTOM_Z + lower_z
     abs_upper = WELL_BOTTOM_Z + upper_z
+    z_retract = 2.88
+    z_safe = 5.0
+    z_final = 23.0
+    
+    # Determine row number from well letter (A=1, B=2, C=3, D=4)
+    well_letter = well_number[0] if well_number and well_number[0].isalpha() else 'A'
+    row_num = ord(well_letter.upper()) - ord('A') + 1
 
     with open(output_path, "w") as f:
         f.write(f"; G-code generated {current_date}\n")
         f.write(f"; Well {well_number} | Lower Z {lower_z:.2f} mm | Upper Z {upper_z:.2f} mm\n\n")
         
-        if annotate:
-            f.write("G21                    ; Set units to millimeters\n")
-            f.write("G90                    ; Use absolute positioning\n")
-            f.write("M83                    ; Use relative positioning for extruder\n")
-        else:
-            f.write("G21\nG90\nM83\n")
+        # Write required header components
+        f.write(f"BottomElevation: {WELL_BOTTOM_Z:.2f}\n")
+        f.write("; Zbottom: \n")
+        f.write("; Zplus: \n")
+        f.write("; Zplusplus: \n")
+        f.write("; Zvoid: \n")
+        f.write(f"; num2str(t) ;WORKING ON ROW {row_num} OF THE 24 WELL TRAY\n")
+        f.write(f"; Well number {well_number}\n\n")
+        
+        f.write("M83\n\n")
+        f.write("G4 P100\n\n")
 
         rows = math.ceil(num_dots / dots_per_row)
         dot_index = 0
@@ -158,6 +170,11 @@ root.geometry("950x1000")
 root.configure(padx=16, pady=16)
 root.columnconfigure(0, weight=1)
 root.columnconfigure(1, weight=1)
+
+# Force window to front on macOS
+root.lift()
+root.attributes('-topmost', True)
+root.after_idle(root.attributes, '-topmost', False)
 
 # --- Menu bar ---
 menubar = tk.Menu(root)
