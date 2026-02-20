@@ -44,9 +44,11 @@ jobs:
         env:
           SIGN_ID: "Developer ID Application: Arielle Wolter (74MA96HS7Z)"
         run: |
-          APP="$(find dist -name '*.app' -print -quit)"
+          APP="$(find dist -maxdepth 3 -name '*.app' -print -quit)"
           echo "Found APP: $APP"
-          xattr -cr "$APP"
+          test -n "$APP"
+
+          xattr -cr "$APP" || true
           codesign --force --deep --timestamp --options runtime --sign "$SIGN_ID" "$APP"
           codesign --verify --deep --strict --verbose=4 "$APP"
 
