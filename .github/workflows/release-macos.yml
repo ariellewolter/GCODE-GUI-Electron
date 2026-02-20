@@ -73,9 +73,14 @@ jobs:
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --wait
 
-      - name: Staple notarization
+            - name: Staple notarization
         run: |
-          xcrun stapler staple "dist/GCode Generator.app"
+          APP="$(find dist -maxdepth 3 -name '*.app' -print -quit)"
+          echo "Stapling APP: $APP"
+          test -n "$APP"
+
+          xcrun stapler staple "$APP"
+
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
