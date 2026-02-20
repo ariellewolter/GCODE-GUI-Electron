@@ -54,8 +54,12 @@ jobs:
 
       - name: Create zip for notarization
         run: |
-          APP="dist/GCode Generator.app"
+          APP="$(find dist -maxdepth 3 -name '*.app' -print -quit)"
+          echo "Zipping APP: $APP"
+          test -n "$APP"
+
           ditto -c -k --keepParent "$APP" GCodeGenerator.zip
+
 
       - name: Notarize
         env:
