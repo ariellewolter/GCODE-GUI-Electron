@@ -1,0 +1,72 @@
+HOW TO SHARE THE G-CODE GENERATOR APP WITH OTHERS
+==================================================
+
+STEP 1: SHARING THE APP
+------------------------
+1. Go to: Desktop → GCODE_GUI → dist folder
+2. Find: "GCode_Generator_fixed.zip" (33MB)
+3. Upload this zip file to:
+   - OneDrive
+   - Google Drive
+   - Dropbox
+   - Or any file sharing service
+4. Share the link with others
+
+
+STEP 2: FOR PEOPLE RECEIVING THE APP
+-------------------------------------
+
+A. DOWNLOAD AND EXTRACT:
+   1. Download the zip file from the shared link
+   2. Double-click the zip file to extract it
+   3. You'll get "GCode Generator.app" folder
+
+B. FIRST TIME OPENING (IMPORTANT!):
+   macOS will block the app the first time. Here's how to fix it:
+
+   OPTION 1 - Right-click method (Easiest):
+   1. Right-click (or Control+click) on "GCode Generator.app"
+   2. Select "Open" from the menu
+   3. Click "Open" in the security dialog
+   4. The app will now open and be trusted
+
+   OPTION 2 - Terminal method (If Option 1 doesn't work):
+   1. Open Terminal
+   2. Type: xattr -cr 
+   3. Drag the "GCode Generator.app" into Terminal (this adds the path)
+   4. Press Enter
+   5. Then double-click the app normally
+
+   OPTION 3 - System Settings:
+   1. Go to System Settings → Privacy & Security
+   2. Scroll down to Security section
+   3. Look for message about blocked app
+   4. Click "Open Anyway"
+
+C. USING THE APP:
+   - After the first time, you can double-click it normally
+   - The app will open the G-Code Generator GUI
+   - No Python installation needed - everything is included!
+
+
+TROUBLESHOOTING
+---------------
+If you see "damaged and can't be opened":
+→ Use the Terminal method above (Option 2)
+
+If the app won't open:
+→ Make sure you extracted the zip file first
+→ Don't try to open files from inside the zip
+→ Extract first, then open the app
+
+If you see a generic icon:
+→ This is normal - the app still works fine
+→ The icon may not display correctly after cloud storage
+
+
+IMPORTANT NOTES
+---------------
+- The app is 27MB (33MB zipped) - includes everything needed
+- Works on Mac computers (macOS 10.9 or later)
+- No Python or other software installation required
+- First-time security warning is normal - just follow steps above

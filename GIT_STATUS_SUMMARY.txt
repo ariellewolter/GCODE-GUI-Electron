@@ -1,0 +1,59 @@
+GIT REPOSITORY STATUS
+======================
+
+CURRENT STATUS:
+--------------
+✅ Git repository exists and is connected to origin/main
+✅ Branch is up to date with origin/main
+⚠️ 13 untracked files (new files created during this session)
+⚠️ gcode_generator.py may have uncommitted changes
+
+UNTRACKED FILES (New files to add):
+-----------------------------------
+1. APP_BUILD_DETAILS.txt - Build information and specifications
+2. FIX_DAMAGED_APP.sh - Script to fix security warnings
+3. HOW_TO_SHARE_AND_USE.txt - User instructions for sharing
+4. REBUILD_WITH_STABLE_PYTHON.md - Instructions for rebuilding
+5. gcode_generator_standalone.spec - PyInstaller spec file
+6. Launch_GCode_Generator.command - Launcher script
+7. create_app.sh - App bundle creation script
+8. fix_icon_after_copy.sh - Icon fix script
+9. And several other helper files
+
+MODIFIED FILES (May need commit):
+----------------------------------
+- gcode_generator.py - Updated with new G-code format:
+  * Added header components (BottomElevation, Zbottom, etc.)
+  * Changed to absolute Z values
+  * Updated dot generation format
+  * Added M83 and G4 P100 at top
+  * Changed comment format to "Begin dot X"
+
+TO UPDATE REPOSITORY:
+--------------------
+1. Review changes to gcode_generator.py:
+   git diff gcode_generator.py
+
+2. Add new documentation files:
+   git add APP_BUILD_DETAILS.txt
+   git add HOW_TO_SHARE_AND_USE.txt
+   git add REBUILD_WITH_STABLE_PYTHON.md
+   git add gcode_generator_standalone.spec
+
+3. Add modified main file:
+   git add gcode_generator.py
+
+4. Commit changes:
+   git commit -m "Update G-code format and add distribution files"
+
+5. Push to remote:
+   git push origin main
+
+OPTIONAL FILES (Helper scripts - may not need in repo):
+-------------------------------------------------------
+- FIX_DAMAGED_APP.sh
+- create_app.sh
+- fix_icon_after_copy.sh
+- Launch scripts (.command, .applescript files)
+
+These are utility scripts that may be useful but aren't essential for the main project.

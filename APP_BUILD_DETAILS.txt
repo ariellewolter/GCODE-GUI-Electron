@@ -1,0 +1,118 @@
+G-CODE GENERATOR APP - BUILD DETAILS
+=====================================
+
+APPLICATION INFORMATION
+------------------------
+Name: GCode Generator
+Version: 1.0.0
+Bundle ID: com.gcodegenerator.24well
+Display Name: GCode Generator
+Package Type: macOS Application (.app)
+
+FILE SIZES
+----------
+App Bundle: 27 MB (uncompressed)
+Zip Archive: 33 MB (compressed)
+Executable: 1.9 MB
+
+BUILD INFORMATION
+-----------------
+Build Tool: PyInstaller 6.18.0
+Build Date: January 19, 2025
+Build Type: Standalone Application (onefile, windowed)
+Architecture: ARM64 (Apple Silicon / M-series Macs)
+Platform: macOS (darwin)
+
+PYTHON ENVIRONMENT
+-------------------
+Python Version: 3.14.0 (DEVELOPMENT/PRE-RELEASE)
+⚠️ WARNING: Python 3.14.0 is not a stable CPython release
+⚠️ This may cause compatibility issues on other Macs
+⚠️ Recommended: Rebuild with Python 3.12 or 3.13 for better stability
+
+Python Framework: Bundled (included in app)
+Python Libraries: All dependencies bundled
+No external Python installation required
+
+COMPATIBILITY CONCERNS
+----------------------
+- Built with Python 3.14.0 (development version from Homebrew)
+- PyInstaller support for 3.14 may be incomplete
+- May not work reliably on all Macs
+- Consider rebuilding with stable Python 3.12 or 3.13
+
+INCLUDED DEPENDENCIES
+---------------------
+- Python 3.14.0 (complete framework)
+- Tkinter (GUI framework)
+- Tcl/Tk libraries (libtcl9.0.dylib, libtcl9tk9.0.dylib)
+- OpenSSL libraries (libssl.3.dylib, libcrypto.3.dylib)
+- Standard Python libraries (base_library.zip - 1.3MB)
+- All required system libraries
+
+APPLICATION FEATURES
+--------------------
+- 24-well plate G-code generation
+- Well position selection (A1-D6)
+- Dot pattern configuration
+- Live preview with zoom (50-200%)
+- Plate calibration panel
+- G-code export with annotations
+- Configurable Z heights and spacing
+
+BUILD CONFIGURATION
+-------------------
+- Console: Disabled (windowed mode)
+- UPX Compression: Enabled
+- Debug: Disabled
+- Code Signing: Not signed (requires first-run bypass)
+- Icon: Default macOS icon (icon-windowed.icns included)
+
+SYSTEM REQUIREMENTS
+-------------------
+- macOS 10.9 or later
+- Apple Silicon (M1/M2/M3) or Intel Mac
+- No additional software installation needed
+- All dependencies bundled
+
+SECURITY NOTES
+--------------
+- App is not code-signed (normal for PyInstaller apps)
+- First launch requires: Right-click → Open
+- Or use: xattr -cr to remove quarantine
+- After first launch, app is trusted
+
+DISTRIBUTION
+------------
+- Distribution Format: ZIP archive (GCode_Generator_fixed.zip)
+- Recommended: Upload to cloud storage (OneDrive, Google Drive, etc.)
+- Recipients: Download, extract, right-click → Open first time
+
+SOURCE CODE
+-----------
+Main Script: gcode_generator.py
+Build Spec: gcode_generator_standalone.spec
+Location: /Users/ariellewolter/Desktop/GCODE_GUI/
+
+BUILD COMMAND
+-------------
+python3 -m PyInstaller gcode_generator_standalone.spec
+
+OUTPUT LOCATION
+---------------
+App: /Users/ariellewolter/Desktop/GCODE_GUI/dist/GCode Generator.app
+Zip: /Users/ariellewolter/Desktop/GCODE_GUI/dist/GCode_Generator_fixed.zip
+
+NOTES
+-----
+- Standalone app - works on any Mac without Python installed
+- All Python dependencies are bundled
+- GUI application - no command line interface
+- First-time security warning is expected and normal
+- Icon may not display correctly after cloud storage transfer
+
+⚠️ IMPORTANT COMPATIBILITY NOTE:
+- Built with Python 3.14.0 (development version)
+- May have compatibility issues on other Macs
+- Consider rebuilding with Python 3.12 or 3.13 for better stability
+- See REBUILD_WITH_STABLE_PYTHON.md for instructions
