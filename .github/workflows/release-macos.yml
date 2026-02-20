@@ -73,7 +73,7 @@ jobs:
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --wait
 
-            - name: Staple notarization
+      - name: Staple notarization
         run: |
           APP="$(find dist -maxdepth 3 -name '*.app' -print -quit)"
           echo "Stapling APP: $APP"
