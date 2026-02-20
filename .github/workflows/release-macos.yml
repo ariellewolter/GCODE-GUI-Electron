@@ -30,6 +30,7 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
+          rm -rf build dist
           pyinstaller gcode_generator.spec
 
       - name: Import signing certificate
