@@ -64,6 +64,26 @@ def safe_float(entry):
         return 0.0
 
 
+def get_well_center_mm(well_key):
+    """Return (x, y) in mm for the well center (middle of circle) for the given well."""
+    cx, cy = DEFAULT_24WELL_CENTERS.get(well_key, DEFAULT_24WELL_CENTERS["A1"])
+    return (cx - PREVIEW_CENTER_X_OFFSET_MM, cy + PREVIEW_CENTER_Y_OFFSET_MM)
+
+
+def start_position_for_center_dot_at_well_center(well_key, num_dots, dots_per_row, spacing_x, spacing_y):
+    """Return (start_x, start_y) so that the center dot of the grid is at the well center.
+    Does not change G-code logic; only computes start position from grid geometry."""
+    if dots_per_row <= 0:
+        return get_well_center_mm(well_key)
+    rows = math.ceil(num_dots / dots_per_row)
+    center_col = (dots_per_row - 1) // 2
+    center_row = (rows - 1) // 2
+    wcx, wcy = get_well_center_mm(well_key)
+    start_x = wcx - center_col * spacing_x
+    start_y = wcy - center_row * spacing_y
+    return (start_x, start_y)
+
+
 # =====================================
 # --- Info Dialog ---
 # =====================================
@@ -220,13 +240,38 @@ for label in [
     row += 1
     entries[label] = e
 
+# --- Start at well center option + Snap button ---
+start_at_well_center_var = tk.BooleanVar(value=False)
+
+def snap_to_well_center():
+    """Set Start X/Y so the center dot of the current grid is at the well center (middle)."""
+    sel = well_var.get()
+    num_dots = safe_int(entries["Number of Dots"])
+    dots_per_row = safe_int(entries["Dots Per Row"])
+    spacing_x = safe_float(entries["Dot Spacing X (mm)"])
+    spacing_y = safe_float(entries["Dot Spacing Y (mm)"])
+    start_x, start_y = start_position_for_center_dot_at_well_center(
+        sel, num_dots, dots_per_row, spacing_x, spacing_y
+    )
+    entries["Start X (mm)"].delete(0, tk.END)
+    entries["Start X (mm)"].insert(0, f"{start_x:.2f}")
+    entries["Start Y (mm)"].delete(0, tk.END)
+    entries["Start Y (mm)"].insert(0, f"{start_y:.2f}")
+    draw_preview()
+
+tk.Checkbutton(left, text="Start at well center (middle)", variable=start_at_well_center_var,
+               font=('Helvetica', 10), command=lambda: (set_defaults_from_current_well(), draw_preview())) \
+    .grid(row=row, column=0, sticky='w', pady=(2, 4))
+row += 1
+tk.Button(left, text="Snap to well center", command=snap_to_well_center, font=('Helvetica', 10)) \
+    .grid(row=row, column=0, sticky='ew', pady=(0, 8))
+row += 1
+
 
 # --- Default field setup ---
+
 def set_defaults_from_current_well():
     sel = well_var.get()
-    cx, cy = DEFAULT_24WELL_CENTERS.get(sel, DEFAULT_24WELL_CENTERS["A1"])
-    entries["Start X (mm)"].delete(0, tk.END); entries["Start X (mm)"].insert(0, f"{cx:.2f}")
-    entries["Start Y (mm)"].delete(0, tk.END); entries["Start Y (mm)"].insert(0, f"{cy:.2f}")
     entries["Number of Dots"].delete(0, tk.END); entries["Number of Dots"].insert(0, "30")
     entries["Dots Per Row"].delete(0, tk.END); entries["Dots Per Row"].insert(0, "10")
     entries["Number of Rows"].delete(0, tk.END); entries["Number of Rows"].insert(0, "3")
@@ -235,6 +280,16 @@ def set_defaults_from_current_well():
     entries["Lower Z Offset (mm above bottom)"].delete(0, tk.END); entries["Lower Z Offset (mm above bottom)"].insert(0, f"{DEFAULT_LOWER_Z_OFFSET:.2f}")
     entries["Upper Z Offset (mm above bottom)"].delete(0, tk.END); entries["Upper Z Offset (mm above bottom)"].insert(0, f"{DEFAULT_UPPER_Z_OFFSET:.2f}")
     entries["Well Number"].delete(0, tk.END); entries["Well Number"].insert(0, sel)
+    if start_at_well_center_var.get():
+        start_x, start_y = start_position_for_center_dot_at_well_center(
+            sel, 30, 10, 0.3, 1.5
+        )
+        entries["Start X (mm)"].delete(0, tk.END); entries["Start X (mm)"].insert(0, f"{start_x:.2f}")
+        entries["Start Y (mm)"].delete(0, tk.END); entries["Start Y (mm)"].insert(0, f"{start_y:.2f}")
+    else:
+        cx, cy = DEFAULT_24WELL_CENTERS.get(sel, DEFAULT_24WELL_CENTERS["A1"])
+        entries["Start X (mm)"].delete(0, tk.END); entries["Start X (mm)"].insert(0, f"{cx:.2f}")
+        entries["Start Y (mm)"].delete(0, tk.END); entries["Start Y (mm)"].insert(0, f"{cy:.2f}")
 
 set_defaults_from_current_well()
 
