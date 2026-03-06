@@ -31,18 +31,20 @@ def save_last_path(path):
 WELL_BOTTOM_Z = 2.35
 DEFAULT_LOWER_Z_OFFSET = 1.5
 DEFAULT_UPPER_Z_OFFSET = 1.51
-WELL_DIAM_MM = 15.6  # 24-well internal diameter (for preview circle)
+WELL_DIAM_MM = 14.5  # 24-well internal diameter (for preview circle)
+PREVIEW_CENTER_X_OFFSET_MM = 1.0 # subtract from center X so preview circle at 36.55 for column A (G-code unchanged)
+PREVIEW_CENTER_Y_OFFSET_MM = 3.0 # add to center Y so preview circle middle at 52.3 (G-code start unchanged)
 
-# --- Default 24-well CENTER coordinates (A-D x 1-6) in mm ---
+# --- Default 24-well CENTER coordinates (A-D x 1-6) in mm; used for G-code start position (preview center offset below) ---
 DEFAULT_24WELL_CENTERS = {
-    'A1': (37.55, 46.3),  'A2': (37.55, 65.6),  'A3': (37.55, 84.9),
-    'A4': (37.55, 104.2), 'A5': (37.55, 123.5), 'A6': (37.55, 142.8),
-    'B1': (56.85, 46.3),  'B2': (56.85, 65.6),  'B3': (56.85, 84.9),
-    'B4': (56.85, 104.2), 'B5': (56.85, 123.5), 'B6': (56.85, 142.8),
-    'C1': (76.15, 46.3),  'C2': (76.15, 65.6),  'C3': (76.15, 84.9),
-    'C4': (76.15, 104.2), 'C5': (76.15, 123.5), 'C6': (76.15, 142.8),
-    'D1': (95.45, 46.3),  'D2': (95.45, 65.6),  'D3': (95.45, 84.9),
-    'D4': (95.45, 104.2), 'D5': (95.45, 123.5), 'D6': (95.45, 142.8),
+    'A1': (37.55, 49.3),  'A2': (37.55, 68.6),  'A3': (37.55, 87.9),
+    'A4': (37.55, 107.2), 'A5': (37.55, 126.5), 'A6': (37.55, 145.8),
+    'B1': (56.85, 49.3),  'B2': (56.85, 68.6),  'B3': (56.85, 87.9),
+    'B4': (56.85, 107.2), 'B5': (56.85, 126.5), 'B6': (56.85, 145.8),
+    'C1': (76.15, 49.3),  'C2': (76.15, 68.6),  'C3': (76.15, 87.9),
+    'C4': (76.15, 107.2), 'C5': (76.15, 126.5), 'C6': (76.15, 145.8),
+    'D1': (95.45, 49.3),  'D2': (95.45, 68.6),  'D3': (95.45, 87.9),
+    'D4': (95.45, 107.2), 'D5': (95.45, 126.5), 'D6': (95.45, 145.8),
 }
 
 # =====================================
@@ -419,6 +421,9 @@ def draw_preview():
 
         sel_well = well_var.get()
         center_x_mm, center_y_mm = DEFAULT_24WELL_CENTERS.get(sel_well, DEFAULT_24WELL_CENTERS["A1"])
+        # Preview only: circle center at 36.55 (X for column A), 52.3 (Y); G-code start stays at center_x_mm, center_y_mm
+        preview_cx = center_x_mm - PREVIEW_CENTER_X_OFFSET_MM
+        preview_cy = center_y_mm + PREVIEW_CENTER_Y_OFFSET_MM
 
         cw = int(canvas.winfo_width() or 500)
         ch = int(canvas.winfo_height() or 500)
@@ -446,8 +451,9 @@ def draw_preview():
                     break
                 abs_x = start_x_val + cc * spacing_x
                 abs_y = start_y_val + rr * spacing_y
-                px = px_center_x + (abs_x - center_x_mm) * scale
-                py = px_center_y + (abs_y - center_y_mm) * scale
+                px = px_center_x + (abs_x - preview_cx) * scale
+                # Y axis inverted: program Y increases across the well; 46.30 displays at position of 49.30
+                py = px_center_y - (abs_y - preview_cy) * scale
                 if math.hypot(px - px_center_x, py - px_center_y) < (r_px - dot_r):
                     oval = canvas.create_oval(px - dot_r, py - dot_r, px + dot_r, py + dot_r,
                                               fill="#2196F3", outline="#1976D2", width=1)
