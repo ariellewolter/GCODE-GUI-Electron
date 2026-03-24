@@ -32,6 +32,8 @@ WELL_BOTTOM_Z = 2.35
 DEFAULT_LOWER_Z_OFFSET = 1.5
 DEFAULT_UPPER_Z_OFFSET = 1.51
 DEFAULT_EXTRUSION = 0.0105
+# Motor calibration for E-value calculator (steps per mm of needle travel)
+STEPS_PER_MM_ECALC = 10498.7
 WELL_DIAM_MM = 14.5  # 24-well internal diameter (for preview circle)
 PREVIEW_CENTER_X_OFFSET_MM = 1.0 # subtract from center X so preview circle at 36.55 for column A (G-code unchanged)
 PREVIEW_CENTER_Y_OFFSET_MM = 3.0 # add to center Y so preview circle middle at 52.3 (G-code start unchanged)
@@ -464,6 +466,105 @@ def on_calib_change(well_key):
 
 build_calibration_grid()
 calib_container.grid_remove()
+
+
+# --- E-value calculator (collapsible, lower right) ---
+ecalc_open = tk.BooleanVar(value=False)
+ecalc_container = tk.Frame(right)
+
+ecalc_entries = {}
+ecalc_out = {}
+
+
+def update_ecalc(_=None):
+    try:
+        cells = float(ecalc_entries["cells"].get() or 0)
+        vol_ul = float(ecalc_entries["vol_ul"].get() or 0)
+        needle_ratio = float(ecalc_entries["needle_ratio"].get() or 0)
+        tip_mm = float(ecalc_entries["tip_mm"].get() or 0)
+    except ValueError:
+        for k in ecalc_out:
+            ecalc_out[k].config(text="—")
+        return
+
+    if vol_ul > 0:
+        conc = cells / vol_ul
+        ecalc_out["conc"].config(text=f"{conc:.6g}")
+    else:
+        ecalc_out["conc"].config(text="—")
+
+    e_val = needle_ratio * vol_ul
+    ecalc_out["e_val"].config(text=f"{e_val:.6g}")
+
+    steps_per_ul = STEPS_PER_MM_ECALC * needle_ratio
+    ecalc_out["steps_ul"].config(text=f"{steps_per_ul:.6g}")
+
+    steps_inj = steps_per_ul * vol_ul
+    ecalc_out["steps_inj"].config(text=f"{steps_inj:.6g}")
+
+    if tip_mm > 0:
+        r = tip_mm / 2.0
+        void_h = vol_ul / (math.pi * r * r)
+        ecalc_out["void_h"].config(text=f"{void_h:.6g}")
+    else:
+        ecalc_out["void_h"].config(text="—")
+
+
+def toggle_ecalc():
+    if ecalc_open.get():
+        ecalc_container.grid_remove()
+        ecalc_open.set(False)
+        ecalc_btn.config(text="E-value calculator ▶")
+    else:
+        ecalc_container.grid(row=4, column=0, sticky="nsew")
+        ecalc_open.set(True)
+        ecalc_btn.config(text="E-value calculator ▼")
+        update_ecalc()
+
+
+ecalc_btn = tk.Button(right, text="E-value calculator ▶",
+                      command=toggle_ecalc, anchor='w')
+ecalc_btn.grid(row=3, column=0, sticky='ew', pady=(6, 6))
+
+ecalc_inner = tk.LabelFrame(ecalc_container, text="Enter variables", padx=8, pady=6)
+ecalc_inner.grid(row=0, column=0, sticky='ew')
+
+r_ = 0
+for lbl, key, default in [
+    ("# Cells per injection", "cells", "250"),
+    ("Volume per injection (µl)", "vol_ul", "0.01"),
+    ("Needle ratio (mm/µl)", "needle_ratio", "1.05"),
+    ("Tip diameter (mm)", "tip_mm", "0.1"),
+]:
+    tk.Label(ecalc_inner, text=lbl).grid(row=r_, column=0, sticky='w', pady=2)
+    e = tk.Entry(ecalc_inner, width=18)
+    e.insert(0, default)
+    e.grid(row=r_, column=1, sticky='e', pady=2)
+    ecalc_entries[key] = e
+    e.bind("<KeyRelease>", update_ecalc)
+    e.bind("<FocusOut>", update_ecalc)
+    r_ += 1
+
+tk.Label(ecalc_inner, text=f"* Steps/µl uses {STEPS_PER_MM_ECALC} steps/mm × needle ratio",
+         font=('Helvetica', 9), fg="gray").grid(row=r_, column=0, columnspan=2, sticky='w', pady=(6, 4))
+r_ += 1
+
+out_fr = tk.LabelFrame(ecalc_container, text="Results", padx=8, pady=6)
+out_fr.grid(row=1, column=0, sticky='ew', pady=(8, 0))
+
+for i, (cap, out_key) in enumerate([
+    ("Conc. of cells (cells/µl)", "conc"),
+    ("E-value", "e_val"),
+    ("Steps/µl", "steps_ul"),
+    ("Steps per injection", "steps_inj"),
+    ("Void height (mm)", "void_h"),
+]):
+    tk.Label(out_fr, text=cap + ":").grid(row=i, column=0, sticky='w', pady=2)
+    lv = tk.Label(out_fr, text="—", anchor='e', width=22)
+    lv.grid(row=i, column=1, sticky='e', pady=2)
+    ecalc_out[out_key] = lv
+
+ecalc_container.grid_remove()
 
 
 # --- Live Preview ---
