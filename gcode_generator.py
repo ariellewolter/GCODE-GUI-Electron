@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import datetime, math, copy
+import datetime, math, copy, sys
 
 import os, json
 
@@ -197,8 +197,58 @@ root = tk.Tk()
 root.title("G-code Generator – 24 Well Plate")
 root.geometry("950x1000")
 root.configure(padx=16, pady=16)
+root.rowconfigure(0, weight=1)
 root.columnconfigure(0, weight=1)
-root.columnconfigure(1, weight=1)
+
+# Scrollable main area (two columns inside inner frame)
+main_scroll = tk.Frame(root)
+main_scroll.grid(row=0, column=0, sticky="nsew")
+main_scroll.rowconfigure(0, weight=1)
+main_scroll.columnconfigure(0, weight=1)
+
+content_canvas = tk.Canvas(main_scroll, highlightthickness=0, borderwidth=0)
+content_vsb = ttk.Scrollbar(main_scroll, orient="vertical", command=content_canvas.yview)
+content_canvas.configure(yscrollcommand=content_vsb.set)
+content_canvas.grid(row=0, column=0, sticky="nsew")
+content_vsb.grid(row=0, column=1, sticky="ns")
+
+scroll_inner = tk.Frame(content_canvas)
+_content_scroll_win = content_canvas.create_window((0, 0), window=scroll_inner, anchor="nw")
+
+
+def _scroll_inner_configure(_event=None):
+    content_canvas.configure(scrollregion=content_canvas.bbox("all"))
+
+
+def _content_canvas_configure(event):
+    content_canvas.itemconfigure(_content_scroll_win, width=event.width)
+
+
+scroll_inner.bind("<Configure>", _scroll_inner_configure)
+content_canvas.bind("<Configure>", _content_canvas_configure)
+
+scroll_inner.columnconfigure(0, weight=1)
+scroll_inner.columnconfigure(1, weight=1)
+
+
+def _main_scroll_mousewheel(event):
+    if not content_canvas.winfo_exists():
+        return
+    if sys.platform == "darwin":
+        content_canvas.yview_scroll(-1 * int(event.delta), "units")
+    else:
+        content_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+
+def _main_scroll_linux_up(_event):
+    if content_canvas.winfo_exists():
+        content_canvas.yview_scroll(-1, "units")
+
+
+def _main_scroll_linux_down(_event):
+    if content_canvas.winfo_exists():
+        content_canvas.yview_scroll(1, "units")
+
 
 # Force window to front on macOS
 root.lift()
@@ -215,7 +265,7 @@ menu.add_command(label="Quit", command=root.quit)
 menubar.add_cascade(label="G-code Generator", menu=menu)
 
 # ============ Left column (Controls) ============
-left = tk.Frame(root)
+left = tk.Frame(scroll_inner)
 left.grid(row=0, column=0, sticky="nsew", padx=(0,12))
 left.columnconfigure(0, weight=1)
 
@@ -368,7 +418,7 @@ row += 1
 
 
 # ============ Right column (Preview + Calibration) ============
-right = tk.Frame(root)
+right = tk.Frame(scroll_inner)
 right.grid(row=0, column=1, sticky="nsew")
 right.columnconfigure(0, weight=1)
 
@@ -398,6 +448,106 @@ coord_label = tk.Label(preview_frame, text="Click a dot to see coordinates", fon
 coord_label.grid(row=3, column=0, sticky='w', padx=10, pady=(0,8))
 
 
+# --- E-value calculator (collapsible; directly under preview) ---
+ecalc_open = tk.BooleanVar(value=True)
+ecalc_container = tk.Frame(right)
+
+ecalc_entries = {}
+ecalc_out = {}
+
+
+def update_ecalc(_=None):
+    try:
+        cells = float(ecalc_entries["cells"].get() or 0)
+        vol_ul = float(ecalc_entries["vol_ul"].get() or 0)
+        needle_ratio = float(ecalc_entries["needle_ratio"].get() or 0)
+        tip_mm = float(ecalc_entries["tip_mm"].get() or 0)
+    except ValueError:
+        for k in ecalc_out:
+            ecalc_out[k].config(text="—")
+        return
+
+    if vol_ul > 0:
+        conc = cells / vol_ul
+        ecalc_out["conc"].config(text=f"{conc:.6g}")
+    else:
+        ecalc_out["conc"].config(text="—")
+
+    e_val = needle_ratio * vol_ul
+    ecalc_out["e_val"].config(text=f"{e_val:.6g}")
+
+    steps_per_ul = STEPS_PER_MM_ECALC * needle_ratio
+    ecalc_out["steps_ul"].config(text=f"{steps_per_ul:.6g}")
+
+    steps_inj = steps_per_ul * vol_ul
+    ecalc_out["steps_inj"].config(text=f"{steps_inj:.6g}")
+
+    if tip_mm > 0:
+        r = tip_mm / 2.0
+        void_h = vol_ul / (math.pi * r * r)
+        ecalc_out["void_h"].config(text=f"{void_h:.6g}")
+    else:
+        ecalc_out["void_h"].config(text="—")
+
+
+def toggle_ecalc():
+    if ecalc_open.get():
+        ecalc_container.grid_remove()
+        ecalc_open.set(False)
+        ecalc_btn.config(text="E-value calculator ▶")
+    else:
+        ecalc_container.grid(row=2, column=0, sticky="nsew", pady=(0, 6))
+        ecalc_open.set(True)
+        ecalc_btn.config(text="E-value calculator ▼")
+        update_ecalc()
+
+
+ecalc_btn = tk.Button(right, text="E-value calculator ▼",
+                      command=toggle_ecalc, anchor='w')
+ecalc_btn.grid(row=1, column=0, sticky='ew', pady=(0, 6))
+
+ecalc_inner = tk.LabelFrame(ecalc_container, text="Enter variables", padx=8, pady=6)
+ecalc_inner.grid(row=0, column=0, sticky='ew')
+
+r_ = 0
+for lbl, key, default in [
+    ("# Cells per injection", "cells", "250"),
+    ("Volume per injection (µl)", "vol_ul", "0.01"),
+    ("Needle ratio (mm/µl)", "needle_ratio", "1.05"),
+    ("Tip diameter (mm)", "tip_mm", "0.1"),
+]:
+    tk.Label(ecalc_inner, text=lbl).grid(row=r_, column=0, sticky='w', pady=2)
+    e = tk.Entry(ecalc_inner, width=18)
+    e.insert(0, default)
+    e.grid(row=r_, column=1, sticky='e', pady=2)
+    ecalc_entries[key] = e
+    e.bind("<KeyRelease>", update_ecalc)
+    e.bind("<FocusOut>", update_ecalc)
+    r_ += 1
+
+tk.Label(ecalc_inner, text=f"* Steps/µl uses {STEPS_PER_MM_ECALC} steps/mm × needle ratio",
+         font=('Helvetica', 9), fg="gray").grid(row=r_, column=0, columnspan=2, sticky='w', pady=(6, 4))
+r_ += 1
+
+out_fr = tk.LabelFrame(ecalc_container, text="Results", padx=8, pady=6)
+out_fr.grid(row=1, column=0, sticky='ew', pady=(8, 0))
+
+for i, (cap, out_key) in enumerate([
+    ("Conc. of cells (cells/µl)", "conc"),
+    ("E-value", "e_val"),
+    ("Steps/µl", "steps_ul"),
+    ("Steps per injection", "steps_inj"),
+    ("Void height (mm)", "void_h"),
+]):
+    tk.Label(out_fr, text=cap + ":").grid(row=i, column=0, sticky='w', pady=2)
+    lv = tk.Label(out_fr, text="—", anchor='e', width=22)
+    lv.grid(row=i, column=1, sticky='e', pady=2)
+    ecalc_out[out_key] = lv
+
+ecalc_container.grid(row=2, column=0, sticky="nsew", pady=(0, 6))
+update_ecalc()
+
+
 # --- Calibration Panel ---
 calib_open = tk.BooleanVar(value=False)
 calib_container = tk.Frame(right)
@@ -408,13 +558,13 @@ def toggle_calibration():
         calib_open.set(False)
         calib_btn.config(text="⚙️ Plate Calibration (optional) ▶")
     else:
-        calib_container.grid(row=2, column=0, sticky='nsew')
+        calib_container.grid(row=4, column=0, sticky='nsew')
         calib_open.set(True)
         calib_btn.config(text="⚙️ Plate Calibration (optional) ▼")
 
 calib_btn = tk.Button(right, text="⚙️ Plate Calibration (optional) ▶",
                       command=toggle_calibration, anchor='w')
-calib_btn.grid(row=1, column=0, sticky='ew', pady=(0,6))
+calib_btn.grid(row=3, column=0, sticky='ew', pady=(0,6))
 
 calib_entries = {}
 
@@ -466,105 +616,6 @@ def on_calib_change(well_key):
 
 build_calibration_grid()
 calib_container.grid_remove()
-
-
-# --- E-value calculator (collapsible, lower right) ---
-ecalc_open = tk.BooleanVar(value=False)
-ecalc_container = tk.Frame(right)
-
-ecalc_entries = {}
-ecalc_out = {}
-
-
-def update_ecalc(_=None):
-    try:
-        cells = float(ecalc_entries["cells"].get() or 0)
-        vol_ul = float(ecalc_entries["vol_ul"].get() or 0)
-        needle_ratio = float(ecalc_entries["needle_ratio"].get() or 0)
-        tip_mm = float(ecalc_entries["tip_mm"].get() or 0)
-    except ValueError:
-        for k in ecalc_out:
-            ecalc_out[k].config(text="—")
-        return
-
-    if vol_ul > 0:
-        conc = cells / vol_ul
-        ecalc_out["conc"].config(text=f"{conc:.6g}")
-    else:
-        ecalc_out["conc"].config(text="—")
-
-    e_val = needle_ratio * vol_ul
-    ecalc_out["e_val"].config(text=f"{e_val:.6g}")
-
-    steps_per_ul = STEPS_PER_MM_ECALC * needle_ratio
-    ecalc_out["steps_ul"].config(text=f"{steps_per_ul:.6g}")
-
-    steps_inj = steps_per_ul * vol_ul
-    ecalc_out["steps_inj"].config(text=f"{steps_inj:.6g}")
-
-    if tip_mm > 0:
-        r = tip_mm / 2.0
-        void_h = vol_ul / (math.pi * r * r)
-        ecalc_out["void_h"].config(text=f"{void_h:.6g}")
-    else:
-        ecalc_out["void_h"].config(text="—")
-
-
-def toggle_ecalc():
-    if ecalc_open.get():
-        ecalc_container.grid_remove()
-        ecalc_open.set(False)
-        ecalc_btn.config(text="E-value calculator ▶")
-    else:
-        ecalc_container.grid(row=4, column=0, sticky="nsew")
-        ecalc_open.set(True)
-        ecalc_btn.config(text="E-value calculator ▼")
-        update_ecalc()
-
-
-ecalc_btn = tk.Button(right, text="E-value calculator ▶",
-                      command=toggle_ecalc, anchor='w')
-ecalc_btn.grid(row=3, column=0, sticky='ew', pady=(6, 6))
-
-ecalc_inner = tk.LabelFrame(ecalc_container, text="Enter variables", padx=8, pady=6)
-ecalc_inner.grid(row=0, column=0, sticky='ew')
-
-r_ = 0
-for lbl, key, default in [
-    ("# Cells per injection", "cells", "250"),
-    ("Volume per injection (µl)", "vol_ul", "0.01"),
-    ("Needle ratio (mm/µl)", "needle_ratio", "1.05"),
-    ("Tip diameter (mm)", "tip_mm", "0.1"),
-]:
-    tk.Label(ecalc_inner, text=lbl).grid(row=r_, column=0, sticky='w', pady=2)
-    e = tk.Entry(ecalc_inner, width=18)
-    e.insert(0, default)
-    e.grid(row=r_, column=1, sticky='e', pady=2)
-    ecalc_entries[key] = e
-    e.bind("<KeyRelease>", update_ecalc)
-    e.bind("<FocusOut>", update_ecalc)
-    r_ += 1
-
-tk.Label(ecalc_inner, text=f"* Steps/µl uses {STEPS_PER_MM_ECALC} steps/mm × needle ratio",
-         font=('Helvetica', 9), fg="gray").grid(row=r_, column=0, columnspan=2, sticky='w', pady=(6, 4))
-r_ += 1
-
-out_fr = tk.LabelFrame(ecalc_container, text="Results", padx=8, pady=6)
-out_fr.grid(row=1, column=0, sticky='ew', pady=(8, 0))
-
-for i, (cap, out_key) in enumerate([
-    ("Conc. of cells (cells/µl)", "conc"),
-    ("E-value", "e_val"),
-    ("Steps/µl", "steps_ul"),
-    ("Steps per injection", "steps_inj"),
-    ("Void height (mm)", "void_h"),
-]):
-    tk.Label(out_fr, text=cap + ":").grid(row=i, column=0, sticky='w', pady=2)
-    lv = tk.Label(out_fr, text="—", anchor='e', width=22)
-    lv.grid(row=i, column=1, sticky='e', pady=2)
-    ecalc_out[out_key] = lv
-
-ecalc_container.grid_remove()
 
 
 # --- Live Preview ---
@@ -706,5 +757,10 @@ def on_well_selected(_=None):
 
 well_dropdown.bind('<<ComboboxSelected>>', on_well_selected)
 
+root.bind_all("<MouseWheel>", _main_scroll_mousewheel)
+root.bind_all("<Button-4>", _main_scroll_linux_up)
+root.bind_all("<Button-5>", _main_scroll_linux_down)
+
 root.after(50, draw_preview)
+root.after(100, _scroll_inner_configure)
 root.mainloop()
