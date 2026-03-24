@@ -31,6 +31,7 @@ def save_last_path(path):
 WELL_BOTTOM_Z = 2.35
 DEFAULT_LOWER_Z_OFFSET = 1.5
 DEFAULT_UPPER_Z_OFFSET = 1.51
+DEFAULT_EXTRUSION = 0.0105
 WELL_DIAM_MM = 14.5  # 24-well internal diameter (for preview circle)
 PREVIEW_CENTER_X_OFFSET_MM = 1.0 # subtract from center X so preview circle at 36.55 for column A (G-code unchanged)
 PREVIEW_CENTER_Y_OFFSET_MM = 3.0 # add to center Y so preview circle middle at 52.3 (G-code start unchanged)
@@ -105,7 +106,8 @@ def show_about():
 # =====================================
 
 def generate_dot_series_gcode(start_x, start_y, num_dots, dot_spacing_x, dot_spacing_y,
-                              lower_z, upper_z, well_number, dots_per_row, output_path, annotate=False):
+                              lower_z, upper_z, well_number, dots_per_row, output_path,
+                              annotate=False, extrusion_e=DEFAULT_EXTRUSION):
     current_date = datetime.datetime.now().strftime("%d-%b-%Y %H:%M:%S")
     # Use lower_z and upper_z as absolute Z values directly
     abs_lower = lower_z
@@ -122,7 +124,7 @@ def generate_dot_series_gcode(start_x, start_y, num_dots, dot_spacing_x, dot_spa
 
     with open(output_path, "w") as f:
         f.write(f"; G-code generated {current_date}\n")
-        f.write(f"; Well {well_number} | Lower Z {lower_z:.2f} mm | Upper Z {upper_z:.2f} mm\n\n")
+        f.write(f"; Well {well_number} | Lower Z {lower_z:.2f} mm | Upper Z {upper_z:.2f} mm | E {extrusion_e:.4f}\n\n")
         
         # Write required header components
         f.write(f"BottomElevation: {WELL_BOTTOM_Z:.2f}\n")
@@ -153,7 +155,7 @@ def generate_dot_series_gcode(start_x, start_y, num_dots, dot_spacing_x, dot_spa
                     f.write(f"G4 P200                ; Pause 200ms\n")
                     f.write(f"G1 Z{abs_lower:.2f} F30        ; Slowly descend to lower position ({abs_lower:.2f}mm) at 30 mm/min\n")
                     f.write(f"G4 P500                ; Pause 500ms at lower position\n")
-                    f.write(f"G1 Z{abs_upper:.2f} E 0.0105 F3 ; Move up to upper position ({abs_upper:.2f}mm), extrude 0.0105, slow at 3 mm/min\n")
+                    f.write(f"G1 Z{abs_upper:.2f} E {extrusion_e:.4f} F3 ; Move up to upper position ({abs_upper:.2f}mm), extrude {extrusion_e:.4f}, slow at 3 mm/min\n")
                     f.write(f"G4 S1.5                ; Wait 1.5 seconds for dispensing\n")
                     f.write(f"G1 Z{z_retract:.2f} F80           ; Retract to {z_retract:.2f}mm at 80 mm/min\n")
                     f.write(f"G4 P750                ; Pause 750ms\n")
@@ -166,7 +168,7 @@ def generate_dot_series_gcode(start_x, start_y, num_dots, dot_spacing_x, dot_spa
                     f.write(f"G4 P200\n")
                     f.write(f"G1 Z{abs_lower:.2f} F30\n")
                     f.write(f"G4 P500\n")
-                    f.write(f"G1 Z{abs_upper:.2f} E 0.0105 F3\n")
+                    f.write(f"G1 Z{abs_upper:.2f} E {extrusion_e:.4f} F3\n")
                     f.write(f"G4 S1.5\n")
                     f.write(f"G1 Z{z_retract:.2f} F80\n")
                     f.write(f"G4 P750\n")
@@ -231,7 +233,8 @@ for label in [
     "Start X (mm)", "Start Y (mm)",
     "Number of Dots", "Dots Per Row", "Number of Rows",
     "Dot Spacing X (mm)", "Dot Spacing Y (mm)",
-    "Lower Z Offset (mm above bottom)", "Upper Z Offset (mm above bottom)", "Well Number"
+    "Lower Z Offset (mm above bottom)", "Upper Z Offset (mm above bottom)", "Well Number",
+    "Extrusion per dot (E)"
 ]:
     tk.Label(left, text=label).grid(row=row, column=0, sticky='w')
     row += 1
@@ -280,6 +283,7 @@ def set_defaults_from_current_well():
     entries["Lower Z Offset (mm above bottom)"].delete(0, tk.END); entries["Lower Z Offset (mm above bottom)"].insert(0, f"{DEFAULT_LOWER_Z_OFFSET:.2f}")
     entries["Upper Z Offset (mm above bottom)"].delete(0, tk.END); entries["Upper Z Offset (mm above bottom)"].insert(0, f"{DEFAULT_UPPER_Z_OFFSET:.2f}")
     entries["Well Number"].delete(0, tk.END); entries["Well Number"].insert(0, sel)
+    entries["Extrusion per dot (E)"].delete(0, tk.END); entries["Extrusion per dot (E)"].insert(0, f"{DEFAULT_EXTRUSION:.4f}")
     if start_at_well_center_var.get():
         start_x, start_y = start_position_for_center_dot_at_well_center(
             sel, 30, 10, 0.3, 1.5
@@ -321,6 +325,7 @@ def save_gcode():
         uz = safe_float(entries["Upper Z Offset (mm above bottom)"])
         wn = entries["Well Number"].get().strip()
         pr = safe_int(entries["Dots Per Row"])
+        extrusion_e = safe_float(entries["Extrusion per dot (E)"])
 
         if not wn:
             return messagebox.showerror("Error", "Well number required.")
@@ -328,6 +333,8 @@ def save_gcode():
             return messagebox.showerror("Error", "Dots and Dots Per Row must be > 0.")
         if lz < 0 or uz < 0:
             return messagebox.showerror("Error", "Z offsets cannot be negative.")
+        if extrusion_e <= 0:
+            return messagebox.showerror("Error", "Extrusion per dot (E) must be greater than 0.")
 
         # --- NEW: Remember last directory ---
         initial_dir = load_last_path()
@@ -341,7 +348,8 @@ def save_gcode():
 
         if path:
             save_last_path(os.path.dirname(path))
-            generate_dot_series_gcode(sx, sy, nd, dx, dy, lz, uz, wn, pr, path, annotate=annotate_var.get())
+            generate_dot_series_gcode(sx, sy, nd, dx, dy, lz, uz, wn, pr, path,
+                                      annotate=annotate_var.get(), extrusion_e=extrusion_e)
 
     except Exception as e:
         messagebox.showerror("Error", str(e))
