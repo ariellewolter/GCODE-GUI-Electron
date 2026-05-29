@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>G-Code Generator (Electron)</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <h1>G-Code Generator</h1>
+        <p>Electron migration prototype</p>
+      </header>
+
+      <main class="layout">
+        <section class="panel controls">
+          <h2>Controls</h2>
+          <label>Select Well Position</label>
+          <select id="well"></select>
+
+          <label>Start X (mm)</label>
+          <input id="start-x" type="number" step="0.01" />
+
+          <label>Start Y (mm)</label>
+          <input id="start-y" type="number" step="0.01" />
+
+          <label>Number of Dots</label>
+          <input id="dots" type="number" />
+
+          <label>Dots Per Row</label>
+          <input id="per-row" type="number" />
+
+          <label>Number of Rows</label>
+          <input id="rows" type="number" />
+
+          <label>Dot Spacing X (mm)</label>
+          <input id="spacing-x" type="number" step="0.01" />
+
+          <label>Dot Spacing Y (mm)</label>
+          <input id="spacing-y" type="number" step="0.01" />
+
+          <label>Lower Z Offset (mm above bottom)</label>
+          <input id="lower-z" type="number" step="0.01" />
+
+          <label>Upper Z Offset (mm above bottom)</label>
+          <input id="upper-z" type="number" step="0.01" />
+
+          <label>Well Number</label>
+          <input id="well-number" type="text" />
+
+          <label>Extrusion per dot (E)</label>
+          <input id="extrusion-e" type="number" step="0.0001" />
+
+          <label class="checkbox">
+            <input id="start-at-center" type="checkbox" />
+            <span>Start at well center (middle)</span>
+          </label>
+          <button id="snap">Snap to well center</button>
+
+          <label class="checkbox">
+            <input id="annotate" type="checkbox" checked />
+            <span>Include code annotations (explains what each line does)</span>
+          </label>
+
+          <div class="buttons">
+            <button id="reset">Reset All Fields</button>
+            <button id="save" class="primary">Save G-code</button>
+          </div>
+          <p id="save-status"></p>
+        </section>
+
+        <section class="panel preview">
+          <h2>Preview</h2>
+          <canvas id="preview-canvas" width="560" height="560"></canvas>
+          <p id="preview-meta">Well preview</p>
+          <p id="coord-label">Click a dot to see coordinates</p>
+
+          <button id="ecalc-toggle" class="full">E-value calculator ▼</button>
+          <div id="ecalc-panel">
+            <h3>Enter variables</h3>
+            <label># Cells per injection</label>
+            <input id="ecalc-cells" type="number" step="1" value="250" />
+
+            <label>Volume per injection (µl)</label>
+            <input id="ecalc-vol-ul" type="number" step="0.0001" value="0.01" />
+
+            <label>Needle ratio (mm/µl)</label>
+            <input id="ecalc-needle-ratio" type="number" step="0.0001" value="1.05" />
+
+            <label>Tip diameter (mm)</label>
+            <input id="ecalc-tip-mm" type="number" step="0.0001" value="0.1" />
+
+            <p class="note">* Steps/µl uses 10498.7 steps/mm × needle ratio</p>
+
+            <h3>Results</h3>
+            <div class="results-grid">
+              <span>Conc. of cells (cells/µl):</span><strong id="ecalc-conc">—</strong>
+              <span>E-value:</span><strong id="ecalc-e-val">—</strong>
+              <span>Steps/µl:</span><strong id="ecalc-steps-ul">—</strong>
+              <span>Steps per injection:</span><strong id="ecalc-steps-inj">—</strong>
+              <span>Void height (mm):</span><strong id="ecalc-void-h">—</strong>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

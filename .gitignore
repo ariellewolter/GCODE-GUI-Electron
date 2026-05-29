@@ -46,3 +46,5 @@ Icon
 *.bak
 *.log
 
+# Node / Electron
+node_modules/

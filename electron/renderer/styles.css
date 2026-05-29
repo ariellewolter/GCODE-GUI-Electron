@@ -1,0 +1,170 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f3f5f9;
+  color: #1f2937;
+  min-height: 100vh;
+  overflow-y: auto;
+}
+
+.app {
+  padding: 20px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.topbar p {
+  margin: 6px 0 0;
+  color: #6b7280;
+}
+
+.layout {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) 1fr;
+  gap: 16px;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #dbe2ea;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.controls label {
+  font-size: 13px;
+  color: #374151;
+}
+
+.controls .checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.controls input,
+.controls select {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.buttons {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+button.full {
+  width: 100%;
+}
+
+button {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+button.primary {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #ffffff;
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.preview input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  width: 100%;
+}
+
+.preview h3 {
+  margin: 4px 0 0;
+  font-size: 16px;
+}
+
+.preview label {
+  font-size: 13px;
+  color: #374151;
+}
+
+#preview-canvas {
+  width: min(72vh, 100%);
+  max-width: 560px;
+  height: auto;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+#preview-meta {
+  margin: 0;
+  color: #6b7280;
+}
+
+#coord-label {
+  margin: 0;
+  color: #4b5563;
+}
+
+#save-status {
+  margin: 4px 0 0;
+  min-height: 20px;
+  color: #1f2937;
+}
+
+#ecalc-panel {
+  width: 100%;
+  border: 1px solid #dbe2ea;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.results-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  align-items: center;
+}
+
+.note {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 12px;
+}
