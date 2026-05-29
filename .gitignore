@@ -49,3 +49,4 @@ Icon
 
 # Node / Electron
 node_modules/
+dist-electron/

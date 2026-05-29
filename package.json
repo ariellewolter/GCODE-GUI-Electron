@@ -5,7 +5,30 @@
   "main": "electron/main.js",
   "scripts": {
     "electron": "electron .",
+    "dist:mac": "electron-builder --mac --publish never",
     "test": "echo \"No tests yet\""
+  },
+  "build": {
+    "appId": "com.ariellewolter.gcodegui",
+    "productName": "G-Code Generator",
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "electron-build"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "entitlements": "electron-build/entitlements.mac.plist",
+      "entitlementsInherit": "electron-build/entitlements.mac.plist",
+      "notarize": true
+    }
   },
   "repository": {
     "type": "git",
@@ -20,6 +43,7 @@
   },
   "homepage": "https://github.com/ariellewolter/GCODE_GUI#readme",
   "devDependencies": {
-    "electron": "^42.3.0"
+    "electron": "^42.3.0",
+    "electron-builder": "^25.1.8"
   }
 }
