@@ -66,6 +66,29 @@ app.whenReady().then(() => {
     return { cancelled: false, path: response.filePath };
   });
 
+  ipcMain.handle("save-gcode-files", async (_event, payload) => {
+    const { files } = payload;
+    const response = await dialog.showOpenDialog({
+      title: "Choose folder for per-well G-code files",
+      defaultPath: loadLastPath(),
+      properties: ["openDirectory", "createDirectory"],
+    });
+
+    if (response.canceled || !response.filePaths?.[0]) {
+      return { cancelled: true };
+    }
+
+    const dir = response.filePaths[0];
+    const paths = [];
+    files.forEach(({ fileName, contents }) => {
+      const filePath = path.join(dir, fileName);
+      fs.writeFileSync(filePath, contents, "utf8");
+      paths.push(filePath);
+    });
+    saveLastPath(dir);
+    return { cancelled: false, dir, paths };
+  });
+
   createWindow();
 
   app.on("activate", () => {

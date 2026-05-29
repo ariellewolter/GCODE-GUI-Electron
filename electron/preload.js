@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld("appInfo", {
 
 contextBridge.exposeInMainWorld("gcodeApi", {
   saveGcode: (payload) => ipcRenderer.invoke("save-gcode", payload),
+  saveGcodeFiles: (payload) => ipcRenderer.invoke("save-gcode-files", payload),
 });

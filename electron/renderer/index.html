@@ -13,32 +13,104 @@
         <p>Electron migration prototype</p>
       </header>
 
-      <main class="layout">
+      <nav class="tabs" role="tablist" aria-label="Application modes">
+        <button
+          type="button"
+          class="tab active"
+          role="tab"
+          id="tab-btn-standard"
+          aria-selected="true"
+          aria-controls="app-workspace"
+          data-tab="standard"
+        >
+          Standard GCode Gui
+        </button>
+        <button
+          type="button"
+          class="tab"
+          role="tab"
+          id="tab-btn-multi-print"
+          aria-selected="false"
+          aria-controls="app-workspace"
+          data-tab="multi-print"
+        >
+          Multi print
+        </button>
+        <button
+          type="button"
+          class="tab"
+          role="tab"
+          id="tab-btn-bulk-print"
+          aria-selected="false"
+          aria-controls="app-workspace"
+          data-tab="bulk-print"
+        >
+          Bulk print
+        </button>
+        <button
+          type="button"
+          class="tab"
+          role="tab"
+          id="tab-btn-circle-print"
+          aria-selected="false"
+          aria-controls="app-workspace"
+          data-tab="circle-print"
+        >
+          Circle print
+        </button>
+      </nav>
+
+      <main id="app-workspace" class="layout" role="tabpanel">
         <section class="panel controls">
-          <h2>Controls</h2>
-          <label>Select Well Position</label>
+          <h2 class="standard-only">Controls</h2>
+          <h2 class="multi-only">Print 1</h2>
+          <h2 class="bulk-only">Pattern settings</h2>
+          <h2 class="circle-only">Circle settings</h2>
+          <label id="well-select-label">Select Well Position</label>
           <select id="well"></select>
 
-          <label>Start X (mm)</label>
-          <input id="start-x" type="number" step="0.01" />
+          <div class="standard-grid-only">
+            <label>Start X (mm)</label>
+            <input id="start-x" type="number" step="0.01" />
 
-          <label>Start Y (mm)</label>
-          <input id="start-y" type="number" step="0.01" />
+            <label>Start Y (mm)</label>
+            <input id="start-y" type="number" step="0.01" />
 
-          <label>Number of Dots</label>
-          <input id="dots" type="number" />
+            <label>Number of Dots</label>
+            <input id="dots" type="number" />
 
-          <label>Dots Per Row</label>
-          <input id="per-row" type="number" />
+            <label>Dots Per Row</label>
+            <input id="per-row" type="number" />
 
-          <label>Number of Rows</label>
-          <input id="rows" type="number" />
+            <label>Number of Rows</label>
+            <input id="rows" type="number" />
 
-          <label>Dot Spacing X (mm)</label>
-          <input id="spacing-x" type="number" step="0.01" />
+            <label>Dot Spacing X (mm)</label>
+            <input id="spacing-x" type="number" step="0.01" />
 
-          <label>Dot Spacing Y (mm)</label>
-          <input id="spacing-y" type="number" step="0.01" />
+            <label>Dot Spacing Y (mm)</label>
+            <input id="spacing-y" type="number" step="0.01" />
+          </div>
+
+          <div class="circle-print-section circle-only">
+            <label>Circle center X (mm)</label>
+            <input id="circle-center-x" type="number" step="0.01" />
+
+            <label>Circle center Y (mm)</label>
+            <input id="circle-center-y" type="number" step="0.01" />
+
+            <label>Number of dots</label>
+            <input id="circle-dots" type="number" min="1" />
+
+            <label>Circle radius (mm)</label>
+            <input id="circle-radius" type="number" step="0.01" min="0" />
+
+            <label>Start angle (degrees)</label>
+            <input id="circle-start-angle" type="number" step="1" value="0" />
+            <p class="note">0° is +X from center; dots are evenly spaced around the circle.</p>
+
+            <button type="button" id="circle-snap-center">Center on well</button>
+          </div>
 
           <label>Lower Z Offset (mm above bottom)</label>
           <input id="lower-z" type="number" step="0.01" />
@@ -46,35 +118,167 @@
           <label>Upper Z Offset (mm above bottom)</label>
           <input id="upper-z" type="number" step="0.01" />
 
-          <label>Well Number</label>
+          <label id="well-number-label">Well Number</label>
           <input id="well-number" type="text" />
 
           <label>Extrusion per dot (E)</label>
           <input id="extrusion-e" type="number" step="0.0001" />
 
-          <label class="checkbox">
-            <input id="start-at-center" type="checkbox" />
-            <span>Start at well center (middle)</span>
-          </label>
-          <button id="snap">Snap to well center</button>
+          <button id="snap" class="standard-grid-only">Snap to well center</button>
 
           <label class="checkbox">
             <input id="annotate" type="checkbox" checked />
             <span>Include code annotations (explains what each line does)</span>
           </label>
 
+          <div class="bulk-print-section bulk-only">
+            <h2>Wells to print</h2>
+            <p class="note bulk-print-note">
+              Same pattern as above for each selected well. Start X/Y shift per well from the reference well
+              (<span id="bulk-ref-well-label">A1</span>).
+            </p>
+            <div class="bulk-well-actions">
+              <button type="button" id="bulk-select-all">Select all</button>
+              <button type="button" id="bulk-select-none">Clear all</button>
+              <button type="button" id="bulk-select-ref">Reference only</button>
+            </div>
+            <div id="bulk-well-grid" class="bulk-well-grid" role="group" aria-label="Wells to print"></div>
+            <p id="bulk-selection-count" class="bulk-selection-count">0 wells selected</p>
+          </div>
+
+          <div class="multi-print-section multi-only">
+            <h2>Print 2</h2>
+            <p class="multi-print-note">Second pass in the <strong>same well</strong> as Print 1 (always on).</p>
+
+            <div id="print-2-options" class="print-2-options">
+              <fieldset class="print-2-mode-fieldset">
+                <legend>Second pass G-code</legend>
+                <label class="radio">
+                  <input type="radio" name="print-2-mode" value="same" checked />
+                  <span>Same pattern as Print 1</span>
+                </label>
+                <label class="radio">
+                  <input type="radio" name="print-2-mode" value="different" />
+                  <span>Different pattern in same well</span>
+                </label>
+              </fieldset>
+
+              <div id="print-2-angle-options" class="print-2-angle-options">
+                <label class="checkbox">
+                  <input id="p2-angle-offset" type="checkbox" />
+                  <span>Offset pass 2 along Y only (X matches Print 1)</span>
+                </label>
+                <div id="p2-angle-controls" class="print-2-angle-controls" hidden>
+                  <p class="note">
+                    X stays on Print 1. Y offset steps across each row: first column min, last column max.
+                    Example (10 per row): dots 1, 11, 21 → +0.1 mm Y; dots 10, 20, 30 → +1.0 mm Y.
+                  </p>
+                  <label>Min Y offset (mm)</label>
+                  <input id="p2-offset-min" type="number" step="0.01" value="0.1" />
+
+                  <label>Max Y offset (mm)</label>
+                  <input id="p2-offset-max" type="number" step="0.01" value="1" />
+
+                  <label>Y offset direction</label>
+                  <select id="p2-offset-side">
+                    <option value="positive">+Y</option>
+                    <option value="negative">−Y</option>
+                  </select>
+                </div>
+              </div>
+
+              <div id="print-2-controls" class="print-2-controls" hidden>
+                <label>Start X (mm)</label>
+                <input id="p2-start-x" type="number" step="0.01" />
+
+                <label>Start Y (mm)</label>
+                <input id="p2-start-y" type="number" step="0.01" />
+
+                <label>Number of Dots</label>
+                <input id="p2-dots" type="number" />
+
+                <label>Dots Per Row</label>
+                <input id="p2-per-row" type="number" />
+
+                <label>Number of Rows</label>
+                <input id="p2-rows" type="number" />
+
+                <label>Dot Spacing X (mm)</label>
+                <input id="p2-spacing-x" type="number" step="0.01" />
+
+                <label>Dot Spacing Y (mm)</label>
+                <input id="p2-spacing-y" type="number" step="0.01" />
+
+                <label>Lower Z Offset (mm above bottom)</label>
+                <input id="p2-lower-z" type="number" step="0.01" />
+
+                <label>Upper Z Offset (mm above bottom)</label>
+                <input id="p2-upper-z" type="number" step="0.01" />
+
+                <label>Extrusion per dot (E)</label>
+                <input id="p2-extrusion-e" type="number" step="0.0001" />
+
+                <button type="button" id="p2-snap">Snap to well center</button>
+              </div>
+            </div>
+          </div>
+
           <div class="buttons">
             <button id="reset">Reset All Fields</button>
-            <button id="save" class="primary">Save G-code</button>
+            <button id="save" class="standard-only primary">Save G-code</button>
+            <button id="save-print-1" class="multi-only">Save Print 1</button>
+            <button id="save-print-2" class="multi-only">Save Print 2</button>
+            <button id="save-combined" class="multi-only primary">Save combined G-code</button>
+            <button id="save-bulk-combined" class="bulk-only primary">Save combined file</button>
+            <button id="save-bulk-individual" class="bulk-only">Save one file per well</button>
+            <button id="save-circle" class="circle-only primary">Save G-code</button>
           </div>
           <p id="save-status"></p>
         </section>
 
         <section class="panel preview">
-          <h2>Preview</h2>
-          <canvas id="preview-canvas" width="560" height="560"></canvas>
-          <p id="preview-meta">Well preview</p>
-          <p id="coord-label">Click a dot to see coordinates</p>
+          <div class="preview-header">
+            <h2>Preview</h2>
+            <label id="preview-target-wrap" class="preview-target multi-only" hidden>
+              Show
+              <select id="preview-target">
+                <option value="both" selected>Both prints</option>
+                <option value="1">Print 1</option>
+                <option value="2">Print 2</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="bulk-preview-dual" class="bulk-preview-dual bulk-only">
+            <div class="bulk-preview-pane">
+              <h3 class="bulk-preview-heading">Plate layout</h3>
+              <canvas id="preview-canvas" width="480" height="480"></canvas>
+              <p id="preview-meta">Well preview</p>
+            </div>
+            <div class="bulk-preview-pane">
+              <div class="bulk-detail-header">
+                <h3 class="bulk-preview-heading">Well detail</h3>
+                <label class="preview-target">
+                  Show well
+                  <select id="bulk-detail-well"></select>
+                </label>
+              </div>
+              <canvas id="bulk-detail-canvas" width="360" height="360"></canvas>
+              <p id="bulk-detail-meta">Well detail preview</p>
+            </div>
+          </div>
+
+          <div id="preview-canvas-single" class="preview-canvas-single standard-multi-only">
+            <canvas id="preview-canvas-std" width="560" height="560"></canvas>
+            <p id="preview-meta-single">Well preview</p>
+          </div>
+
+          <div id="circle-preview-wrap" class="preview-canvas-single circle-only circle-preview-wrap">
+            <canvas id="preview-canvas-circle" width="560" height="560"></canvas>
+            <p id="preview-meta-circle">Well preview</p>
+          </div>
+
+          <p id="coord-label">Hover over a dot to see coordinates</p>
 
           <button id="ecalc-toggle" class="full">E-value calculator ▼</button>
           <div id="ecalc-panel">
