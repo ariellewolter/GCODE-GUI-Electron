@@ -81,19 +81,48 @@ body {
 .controls {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
 }
 
-.controls label {
+.controls h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.controls label:not(.checkbox):not(.radio) {
+  display: block;
+  width: 100%;
+  margin: 14px 0 0;
   font-size: 13px;
+  font-weight: 500;
   color: #374151;
+}
+
+.controls h2 + label:not(.checkbox):not(.radio),
+.controls .standard-grid-only > label:first-child,
+.controls .circle-print-section > label:first-child,
+.controls .print-2-controls > label:first-child,
+.controls .print-2-angle-controls > label:first-child {
+  margin-top: 0;
+}
+
+.controls label:not(.checkbox):not(.radio) + input,
+.controls label:not(.checkbox):not(.radio) + select {
+  margin-top: 6px;
 }
 
 .controls .checkbox {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 4px;
+  margin-top: 14px;
+  width: 100%;
+}
+
+.controls .checkbox span {
+  flex: 1;
+  line-height: 1.35;
 }
 
 .controls input,
@@ -102,10 +131,33 @@ body {
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 14px;
+  width: 100%;
+}
+
+.controls input[type="checkbox"],
+.controls input[type="radio"] {
+  width: auto;
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.controls > button:not(.buttons button),
+.controls .circle-print-section > button {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.standard-grid-only,
+.circle-print-section,
+.print-2-controls,
+.print-2-angle-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 .buttons {
-  margin-top: 10px;
+  margin-top: 16px;
   display: flex;
   gap: 8px;
 }
@@ -181,7 +233,30 @@ button.primary {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
+}
+
+#ecalc-panel h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+#ecalc-panel h3:not(:first-child) {
+  margin-top: 16px;
+}
+
+#ecalc-panel label {
+  display: block;
+  margin: 12px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+#ecalc-panel label + input {
+  margin-top: 6px;
+  width: 100%;
 }
 
 .results-grid {
@@ -224,10 +299,8 @@ body[data-app-mode="circle-print"] .standard-multi-only {
   display: none !important;
 }
 
-.circle-print-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.circle-print-section .note {
+  margin-top: 10px;
 }
 
 body[data-app-mode="standard"] .standard-multi-only,
@@ -372,6 +445,9 @@ body[data-app-mode="circle-print"] #circle-preview-wrap {
   align-items: center;
   justify-content: center;
   gap: 4px;
+  margin: 0;
+  width: auto;
+  font-weight: 600;
   min-height: 34px;
   border: 1px solid #dbe2ea;
   border-radius: 8px;
@@ -449,16 +525,25 @@ body[data-app-mode="circle-print"] #circle-preview-wrap {
 
 .controls .radio {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+  margin: 8px 0 0;
+  width: 100%;
+}
+
+.controls .radio span {
+  flex: 1;
+  line-height: 1.35;
+}
+
+.print-2-mode-fieldset .radio:first-of-type {
   margin-top: 4px;
 }
 
-.print-2-angle-options,
-.print-2-angle-controls {
+.print-2-angle-options {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
 }
 
 .print-2-angle-controls {
@@ -468,10 +553,12 @@ body[data-app-mode="circle-print"] #circle-preview-wrap {
   background: #f8fafc;
 }
 
+.print-2-angle-controls .note {
+  margin: 0 0 10px;
+}
+
 .print-2-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  margin-top: 10px;
   padding: 12px;
   border: 1px solid #dbe2ea;
   border-radius: 8px;
