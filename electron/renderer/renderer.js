@@ -67,6 +67,7 @@ const el = {
   ecalcStepsInj: document.getElementById("ecalc-steps-inj"),
   ecalcVoidH: document.getElementById("ecalc-void-h"),
   print2Options: document.getElementById("print-2-options"),
+  print2ModeFieldset: document.getElementById("print-2-mode-fieldset"),
   print2Controls: document.getElementById("print-2-controls"),
   p2startX: document.getElementById("p2-start-x"),
   p2startY: document.getElementById("p2-start-y"),
@@ -107,6 +108,8 @@ const el = {
   p2OffsetMin: document.getElementById("p2-offset-min"),
   p2OffsetMax: document.getElementById("p2-offset-max"),
   p2OffsetSide: document.getElementById("p2-offset-side"),
+  print1PatternNote: document.getElementById("print-1-pattern-note"),
+  p2OffsetUsesPrint1Note: document.getElementById("p2-offset-uses-print1-note"),
 };
 
 const PRINT1_DOT_COLOR = "#2196F3";
@@ -329,9 +332,7 @@ function buildAngledPrint2Dots(print2Params) {
   const print1Dots = computeGridDotsFromParams(print1);
   if (!print1Dots.length) return computeGridDotsFromParams(print2Params);
 
-  const baseDots = getPrint2Mode() === "same"
-    ? print1Dots.map((dot) => ({ ...dot }))
-    : computeGridDotsFromParams(print2Params);
+  const baseDots = print1Dots.map((dot) => ({ ...dot }));
   const { min, max, sign } = getAngleOffsetSettings();
   const perRow = print2Params.perRow > 0 ? print2Params.perRow : print1.perRow;
   return applyProgressiveYOffset(baseDots, print1Dots, perRow, min, max, sign);
@@ -558,14 +559,15 @@ function setAppMode(tabId) {
 function collectPrint2Params() {
   if (!isSecondPassEnabled()) return null;
 
+  const offsetOn = getAngleOffsetSettings().enabled;
   let params;
-  if (getPrint2Mode() === "same") {
+  if (offsetOn || getPrint2Mode() === "same") {
     params = collectPrint1Params();
   } else {
     params = collectPrint2PatternParams();
   }
 
-  if (getAngleOffsetSettings().enabled) {
+  if (offsetOn) {
     const customDots = buildAngledPrint2Dots(params);
     return {
       ...params,
@@ -631,13 +633,23 @@ function defaultFileNameForParams(params, suffix) {
   return `well_${params.wellNumber}_Z${params.lowerZ.toFixed(2)}${suffix}.txt`;
 }
 
+function isPrint2OffsetMode() {
+  return isSecondPassEnabled() && el.p2AngleOffset.checked;
+}
+
 function updateModeUi() {
   const multi = isSecondPassEnabled();
   const bulk = isBulkPrintEnabled();
   const circle = isCirclePrintEnabled();
+  const offsetOn = isPrint2OffsetMode();
 
   el.p2AngleControls.hidden = !multi || !el.p2AngleOffset.checked;
-  el.print2Controls.hidden = !multi || getPrint2Mode() !== "different";
+  if (el.print1PatternNote) el.print1PatternNote.hidden = !multi;
+  if (el.p2OffsetUsesPrint1Note) el.p2OffsetUsesPrint1Note.hidden = !offsetOn;
+  el.print2Controls.hidden = !multi || offsetOn || getPrint2Mode() !== "different";
+
+  const differentRadio = document.querySelector('input[name="print-2-mode"][value="different"]');
+  if (differentRadio) differentRadio.disabled = offsetOn;
 
   el.save.hidden = multi || bulk || circle;
   el.savePrint1.hidden = !multi;
@@ -1878,6 +1890,10 @@ function initMultiPrint() {
   el.previewTarget.addEventListener("change", drawPreview);
 
   el.p2AngleOffset.addEventListener("change", () => {
+    if (el.p2AngleOffset.checked) {
+      const sameRadio = document.querySelector('input[name="print-2-mode"][value="same"]');
+      if (sameRadio) sameRadio.checked = true;
+    }
     updateModeUi();
     drawPreview();
   });

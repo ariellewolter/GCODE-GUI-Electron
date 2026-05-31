@@ -565,6 +565,22 @@ body[data-app-mode="circle-print"] #circle-preview-wrap {
   background: #f8fafc;
 }
 
+.print-2-pattern-heading {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.print-2-pattern-note,
+.p2-offset-uses-print1-note {
+  margin: 0 0 10px;
+}
+
+#print-1-pattern-note {
+  margin: -6px 0 12px;
+}
+
 .preview-header {
   display: flex;
   align-items: center;

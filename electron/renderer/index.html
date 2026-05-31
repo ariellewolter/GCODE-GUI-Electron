@@ -66,10 +66,13 @@
           <h2 class="multi-only">Print 1</h2>
           <h2 class="bulk-only">Pattern settings</h2>
           <h2 class="circle-only">Circle settings</h2>
+          <p id="print-1-pattern-note" class="note multi-only" hidden>
+            Start X/Y, dots, rows, and spacing below are Print 1 (also used for pass 2 when Y offset is on).
+          </p>
           <label id="well-select-label">Select Well Position</label>
           <select id="well"></select>
 
-          <div class="standard-grid-only">
+          <div id="print-1-pattern" class="standard-grid-only print-1-pattern">
             <label>Start X (mm)</label>
             <input id="start-x" type="number" step="0.01" />
 
@@ -151,7 +154,7 @@
             <p class="multi-print-note">Second pass in the <strong>same well</strong> as Print 1 (always on).</p>
 
             <div id="print-2-options" class="print-2-options">
-              <fieldset class="print-2-mode-fieldset">
+              <fieldset id="print-2-mode-fieldset" class="print-2-mode-fieldset">
                 <legend>Second pass G-code</legend>
                 <label class="radio">
                   <input type="radio" name="print-2-mode" value="same" checked />
@@ -168,6 +171,9 @@
                   <input id="p2-angle-offset" type="checkbox" />
                   <span>Offset pass 2 along Y only (X matches Print 1)</span>
                 </label>
+                <p id="p2-offset-uses-print1-note" class="note p2-offset-uses-print1-note" hidden>
+                  Pass 2 uses Print 1 Start X/Y, dots, and spacing above. Only the Y offset below applies to pass 2.
+                </p>
                 <div id="p2-angle-controls" class="print-2-angle-controls" hidden>
                   <p class="note">
                     X stays on Print 1. Y offset steps across each row: first column min, last column max.
@@ -188,6 +194,10 @@
               </div>
 
               <div id="print-2-controls" class="print-2-controls" hidden>
+                <h3 class="print-2-pattern-heading">Print 2 pattern</h3>
+                <p class="note print-2-pattern-note">
+                  Separate Start X/Y, dots, and spacing for pass 2 (not used when Y offset is enabled).
+                </p>
                 <label>Start X (mm)</label>
                 <input id="p2-start-x" type="number" step="0.01" />
 
