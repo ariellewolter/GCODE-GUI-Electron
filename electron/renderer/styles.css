@@ -632,3 +632,105 @@ body[data-app-mode="circle-print"] #circle-preview-wrap {
 .buttons {
   flex-wrap: wrap;
 }
+
+.user-issue-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.user-issue-modal[hidden] {
+  display: none;
+}
+
+.user-issue-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.user-issue-modal-panel {
+  position: relative;
+  width: min(520px, 100%);
+  max-height: min(80vh, 640px);
+  overflow: auto;
+  background: #ffffff;
+  border: 1px solid #dbe2ea;
+  border-radius: 12px;
+  padding: 20px 22px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+}
+
+.user-issue-modal-panel h3 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.user-issue-modal-body {
+  color: #374151;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.user-issue-block + .user-issue-block {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.user-issue-block h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.user-issue-badge {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.user-issue-badge-info {
+  color: #1d4ed8;
+}
+
+.user-issue-block p {
+  margin: 0 0 8px;
+}
+
+.user-issue-fields {
+  margin: 0;
+  padding-left: 18px;
+  color: #1f2937;
+}
+
+.user-issue-fields li + li {
+  margin-top: 4px;
+}
+
+.user-issue-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.print-2-mode-fieldset.disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.ecalc-apply-note {
+  margin-top: 12px;
+}
+
+.ecalc-apply-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}

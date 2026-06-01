@@ -102,14 +102,20 @@ app.whenReady().then(() => {
         paths.push(filePath);
       });
     } catch (err) {
-      paths.forEach((filePath) => {
+      const writtenPaths = [...paths];
+      writtenPaths.forEach((filePath) => {
         try {
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         } catch (_unlinkErr) {
           // Best-effort rollback if a later file fails.
         }
       });
-      return { cancelled: false, error: true, message: err.message || String(err), paths: [] };
+      return {
+        cancelled: false,
+        error: true,
+        message: err.message || String(err),
+        paths: writtenPaths,
+      };
     }
     saveLastPath(dir);
     return { cancelled: false, dir, paths };

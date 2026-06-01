@@ -325,9 +325,28 @@
               <span>Steps per injection:</span><strong id="ecalc-steps-inj">—</strong>
               <span>Void height (mm):</span><strong id="ecalc-void-h">—</strong>
             </div>
+            <p class="note ecalc-apply-note">
+              The calculator does not change Extrusion (E) automatically. Choose which pass field to update.
+            </p>
+            <div class="ecalc-apply-actions">
+              <button type="button" id="ecalc-apply-p1">Apply E to Print 1</button>
+              <button type="button" id="ecalc-apply-p2" class="multi-only">Apply E to Print 2</button>
+            </div>
           </div>
         </section>
       </main>
+    </div>
+
+    <div id="user-issue-modal" class="user-issue-modal" hidden role="dialog" aria-modal="true" aria-labelledby="user-issue-modal-title">
+      <div class="user-issue-modal-backdrop" id="user-issue-modal-backdrop"></div>
+      <div class="user-issue-modal-panel">
+        <h3 id="user-issue-modal-title">Check your settings</h3>
+        <div id="user-issue-modal-body" class="user-issue-modal-body"></div>
+        <div class="user-issue-modal-actions">
+          <button type="button" id="user-issue-modal-focus" class="primary">Go to first field</button>
+          <button type="button" id="user-issue-modal-dismiss">OK</button>
+        </div>
+      </div>
     </div>
 
     <script src="../shared/gcode-core.js"></script>

@@ -25,6 +25,8 @@ const {
   translateStartForWell,
   isDotInsideWellMm,
   computeCircleDots,
+  resolveParamsDots,
+  parsePatternFloat,
 } = core;
 
 function mockPassFields(lower, upper, extrusion) {
@@ -252,9 +254,103 @@ describe("bulk well geometry", () => {
   });
 });
 
+describe("formatCoordMm, formatZMm, formatExtrusionE", () => {
+  const {
+    formatCoordMm,
+    formatZMm,
+    formatExtrusionE,
+    formatGcodeXY,
+    COORD_MM_DECIMALS,
+    EXTRUSION_E_DECIMALS,
+  } = core;
+
+  it("uses 2 decimals for mm coordinates and Z", () => {
+    assert.equal(COORD_MM_DECIMALS, 2);
+    assert.equal(formatCoordMm(37.554), "37.55");
+    assert.equal(formatCoordMm(37.556), "37.56");
+    assert.equal(formatZMm(1.5), "1.50");
+  });
+
+  it("uses 4 decimals for extrusion E", () => {
+    assert.equal(EXTRUSION_E_DECIMALS, 4);
+    assert.equal(formatExtrusionE(0.0105), "0.0105");
+    assert.equal(formatExtrusionE(0.1), "0.1000");
+  });
+
+  it("formats G-code XY pairs consistently", () => {
+    assert.equal(formatGcodeXY(37.55, 46.3), "X37.55 Y46.30");
+  });
+});
+
 describe("safeInt and safeFloat", () => {
   it("returns 0 for invalid numeric input", () => {
     assert.equal(safeInt("abc"), 0);
     assert.equal(safeFloat(""), 0);
+  });
+});
+
+describe("parsePatternFloat", () => {
+  it("returns 0 for empty pattern fields", () => {
+    assert.equal(parsePatternFloat(""), 0);
+    assert.equal(parsePatternFloat("  "), 0);
+  });
+
+  it("parses the same values as parseEcalcFloat for non-empty input", () => {
+    assert.equal(parsePatternFloat("37.55"), 37.55);
+    assert.equal(parsePatternFloat("  2.5 "), 2.5);
+  });
+});
+
+describe("resolveParamsDots (preview and export share this path)", () => {
+  it("matches computeGridDotsFromParams for standard grids", () => {
+    const params = defaultGridParams({ numDots: 6, perRow: 3 });
+    assert.deepEqual(resolveParamsDots(params), computeGridDotsFromParams(params));
+  });
+
+  it("uses customDots when provided", () => {
+    const customDots = [
+      { absX: 38.5, absY: 47.2 },
+      { absX: 39.0, absY: 47.8 },
+    ];
+    const params = defaultGridParams({ customDots });
+    assert.deepEqual(resolveParamsDots(params), customDots);
+  });
+
+  it("matches circle dot layout used in circle export", () => {
+    const [cx, cy] = DEFAULT_24WELL_CENTERS.A1;
+    const customDots = computeCircleDots(cx, cy, 3, 8, 45);
+    const params = defaultGridParams({ customDots, numDots: 8 });
+    assert.deepEqual(resolveParamsDots(params), customDots);
+  });
+
+  it("matches bulk translated grid dots", () => {
+    const [sx, sy] = translateStartForWell(
+      "A1",
+      "C4",
+      DEFAULT_24WELL_STARTS.A1[0],
+      DEFAULT_24WELL_STARTS.A1[1]
+    );
+    const params = defaultGridParams({
+      well: "C4",
+      wellNumber: "C4",
+      startX: sx,
+      startY: sy,
+    });
+    assert.deepEqual(resolveParamsDots(params), computeGridDotsFromParams(params));
+  });
+
+  it("matches Y-offset pass 2 dots", () => {
+    const print1 = defaultGridParams({ numDots: 10, perRow: 5 });
+    const print1Dots = computeGridDotsFromParams(print1);
+    const customDots = applyProgressiveYOffset(
+      print1Dots.map((dot) => ({ ...dot })),
+      print1Dots,
+      5,
+      0.1,
+      1.0,
+      1
+    );
+    const print2 = { ...print1, customDots };
+    assert.deepEqual(resolveParamsDots(print2), customDots);
   });
 });

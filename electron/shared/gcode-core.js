@@ -22,6 +22,25 @@
   const MAX_GRID_DOTS = 5000;
   const MAX_GRID_ROWS = 250;
   const MAX_GRID_PER_ROW = 250;
+  const COORD_MM_DECIMALS = 2;
+  const Z_MM_DECIMALS = 2;
+  const EXTRUSION_E_DECIMALS = 4;
+
+  function formatCoordMm(value) {
+    return Number(value).toFixed(COORD_MM_DECIMALS);
+  }
+
+  function formatZMm(value) {
+    return Number(value).toFixed(Z_MM_DECIMALS);
+  }
+
+  function formatExtrusionE(value) {
+    return Number(value).toFixed(EXTRUSION_E_DECIMALS);
+  }
+
+  function formatGcodeXY(x, y) {
+    return `X${formatCoordMm(x)} Y${formatCoordMm(y)}`;
+  }
 
   function build24WellMap(a1X, a1Y) {
     const map = {};
@@ -51,6 +70,11 @@
     if (raw === "") return null;
     const n = Number.parseFloat(raw);
     return Number.isFinite(n) ? n : null;
+  }
+
+  function parsePatternFloat(v) {
+    const n = parseEcalcFloat(v);
+    return n === null ? 0 : n;
   }
 
   function getWellCenterMm(wellKey) {
@@ -188,7 +212,7 @@
     const passErr = validatePassSettingsFromValues(params.lowerZ, params.upperZ, params.extrusionE);
     if (passErr) return passErr;
     if (params.radiusMm > WELL_RADIUS_MM) {
-      return `Error: Radius exceeds well (${WELL_RADIUS_MM.toFixed(2)} mm max).`;
+      return `Error: Radius exceeds well (${formatCoordMm(WELL_RADIUS_MM)} mm max).`;
     }
     return validateDotsInsideWell(params);
   }
@@ -200,11 +224,14 @@
   }
 
   function applyPrint2PassSettings(params, passValues) {
+    const lowerZ = parseEcalcFloat(passValues.lowerZ);
+    const upperZ = parseEcalcFloat(passValues.upperZ);
+    const extrusionE = parseEcalcFloat(passValues.extrusionE);
     return {
       ...params,
-      lowerZ: safeFloat(passValues.lowerZ),
-      upperZ: safeFloat(passValues.upperZ),
-      extrusionE: safeFloat(passValues.extrusionE),
+      lowerZ: lowerZ !== null ? lowerZ : params.lowerZ,
+      upperZ: upperZ !== null ? upperZ : params.upperZ,
+      extrusionE: extrusionE !== null ? extrusionE : params.extrusionE,
     };
   }
 
@@ -231,15 +258,15 @@
   }
 
   function defaultFileNameForParams(params, suffix) {
-    return `well_${params.wellNumber}_Z${params.lowerZ.toFixed(2)}${suffix}.txt`;
+    return `well_${params.wellNumber}_Z${formatZMm(params.lowerZ)}${suffix}.txt`;
   }
 
   function defaultBulkFileName(wells, lowerZ) {
     if (wells.length === 1) {
-      return `well_${wells[0]}_Z${lowerZ.toFixed(2)}.txt`;
+      return `well_${wells[0]}_Z${formatZMm(lowerZ)}.txt`;
     }
     const label = wells.length <= 6 ? wells.join("-") : `${wells.length}wells`;
-    return `bulk_${label}_Z${lowerZ.toFixed(2)}.txt`;
+    return `bulk_${label}_Z${formatZMm(lowerZ)}.txt`;
   }
 
   return {
@@ -259,12 +286,20 @@
     MAX_GRID_DOTS,
     MAX_GRID_ROWS,
     MAX_GRID_PER_ROW,
+    COORD_MM_DECIMALS,
+    Z_MM_DECIMALS,
+    EXTRUSION_E_DECIMALS,
+    formatCoordMm,
+    formatZMm,
+    formatExtrusionE,
+    formatGcodeXY,
     DEFAULT_24WELL_STARTS,
     DEFAULT_24WELL_CENTERS,
     build24WellMap,
     safeInt,
     safeFloat,
     parseEcalcFloat,
+    parsePatternFloat,
     getWellCenterMm,
     isDotInsideWellMm,
     computeGridDotsFromParams,

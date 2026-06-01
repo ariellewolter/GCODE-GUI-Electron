@@ -19,8 +19,7 @@ const {
   safeInt,
   safeFloat,
   parseEcalcFloat,
-  getWellCenterMm,
-  isDotInsideWellMm,
+  parsePatternFloat,
   resolveParamsDots,
   countDotsOutsideWell,
   validateDotsInsideWell,
@@ -37,6 +36,10 @@ const {
   defaultBulkFileName,
   validateAngleOffsetValues,
   buildCombinedGcode: coreBuildCombinedGcode,
+  formatCoordMm,
+  formatZMm,
+  formatExtrusionE,
+  formatGcodeXY,
 } = GcodeCore;
 
 const STEPS_PER_MM_ECALC = 10498.7;
@@ -127,7 +130,334 @@ const el = {
   p2OffsetSide: document.getElementById("p2-offset-side"),
   print1PatternNote: document.getElementById("print-1-pattern-note"),
   p2OffsetUsesPrint1Note: document.getElementById("p2-offset-uses-print1-note"),
+  ecalcApplyP1: document.getElementById("ecalc-apply-p1"),
+  ecalcApplyP2: document.getElementById("ecalc-apply-p2"),
+  userIssueModal: document.getElementById("user-issue-modal"),
+  userIssueModalTitle: document.getElementById("user-issue-modal-title"),
+  userIssueModalBody: document.getElementById("user-issue-modal-body"),
+  userIssueModalFocus: document.getElementById("user-issue-modal-focus"),
+  userIssueModalDismiss: document.getElementById("user-issue-modal-dismiss"),
+  userIssueModalBackdrop: document.getElementById("user-issue-modal-backdrop"),
 };
+
+const PRINT1_PASS_FIELDS = [
+  { label: "Lower Z Offset", id: "lower-z" },
+  { label: "Upper Z Offset", id: "upper-z" },
+  { label: "Extrusion per dot (E)", id: "extrusion-e" },
+];
+
+const PRINT2_PASS_FIELDS = [
+  { label: "Print 2 Lower Z", id: "p2-lower-z" },
+  { label: "Print 2 Upper Z", id: "p2-upper-z" },
+  { label: "Print 2 Extrusion (E)", id: "p2-extrusion-e" },
+];
+
+const GRID_PATTERN_FIELDS = [
+  { label: "Start X", id: "start-x" },
+  { label: "Start Y", id: "start-y" },
+  { label: "Dots Per Row", id: "per-row" },
+  { label: "Number of Rows", id: "rows" },
+  { label: "Dot Spacing X", id: "spacing-x" },
+  { label: "Dot Spacing Y", id: "spacing-y" },
+];
+
+const Y_OFFSET_FIELDS = [
+  { label: "Min Y offset", id: "p2-offset-min" },
+  { label: "Max Y offset", id: "p2-offset-max" },
+  { label: "Y offset direction", id: "p2-offset-side" },
+];
+
+let lastPreviewIssueKey = "";
+let dismissedPreviewIssueKey = "";
+let previewIssueBootstrapped = false;
+let modalFocusTargetId = null;
+
+function createUserIssue({ id, title, message, fields = [], focusId = null, blocking = true }) {
+  return {
+    id,
+    title,
+    message,
+    fields,
+    focusId: focusId || fields[0]?.id || null,
+    blocking,
+  };
+}
+
+function renderUserIssueHtml(issue) {
+  const badge = issue.blocking === false
+    ? '<p class="user-issue-badge user-issue-badge-info">Heads up — you can still save/export</p>'
+    : "";
+  const fieldsHtml = issue.fields.length
+    ? `<ul class="user-issue-fields">${issue.fields.map((f) => `<li><strong>${f.label}</strong></li>`).join("")}</ul>`
+    : "";
+  return `<div class="user-issue-block">${badge}<h4>${issue.title}</h4><p>${issue.message}</p>${fieldsHtml}</div>`;
+}
+
+function showUserIssuesModal(issues, { source = "save" } = {}) {
+  if (!issues.length || !el.userIssueModal) return;
+  const hasBlocking = issues.some((issue) => issue.blocking !== false);
+  let title;
+  if (source === "save") {
+    title = hasBlocking ? "Cannot save G-code" : "Save notice";
+  } else if (hasBlocking) {
+    title = "Preview notice — save will be blocked";
+  } else {
+    title = "Heads up — export still OK";
+  }
+  el.userIssueModalTitle.textContent = title;
+  el.userIssueModalBody.innerHTML = issues.map(renderUserIssueHtml).join("");
+  modalFocusTargetId = issues.find((issue) => issue.focusId)?.focusId || null;
+  el.userIssueModalFocus.hidden = !modalFocusTargetId;
+  el.userIssueModal.hidden = false;
+}
+
+function hideUserIssueModal(dismissKey = null) {
+  if (!el.userIssueModal) return;
+  el.userIssueModal.hidden = true;
+  if (dismissKey) dismissedPreviewIssueKey = dismissKey;
+  modalFocusTargetId = null;
+}
+
+function focusIssueField(fieldId) {
+  const node = fieldId ? document.getElementById(fieldId) : null;
+  if (!node) return;
+  node.focus();
+  node.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+function reportSaveFailure(issues, shortMessage) {
+  const list = Array.isArray(issues) ? issues : [issues];
+  el.saveStatus.textContent = shortMessage || list[0]?.message || "Save blocked.";
+  showUserIssuesModal(list, { source: "save" });
+}
+
+function collectBulkWellOutsideFailures(wells) {
+  const failing = [];
+  wells.forEach((wellKey) => {
+    const params = collectBulkParamsForWell(wellKey);
+    const wellErr = validateDotsInsideWell(params, wellKey);
+    if (wellErr) failing.push({ wellKey, wellErr });
+  });
+  return failing;
+}
+
+function issuesForBulkWellOutsideFailures(failing) {
+  if (!failing.length) return [];
+  if (failing.length === 1) {
+    const { wellKey, wellErr } = failing[0];
+    return [createUserIssue({
+      id: `BULK_OUTSIDE_${wellKey}`,
+      title: `Well ${wellKey}: dots outside well`,
+      message: `${wellErr} Adjust the reference pattern or choose different wells.`,
+      fields: GRID_PATTERN_FIELDS,
+      focusId: "start-x",
+    })];
+  }
+  return [createUserIssue({
+    id: "BULK_OUTSIDE_MULTI",
+    title: `${failing.length} wells have dots outside`,
+    message: failing.map(({ wellKey, wellErr }) => `${wellErr.replace("Error: ", "")} (${wellKey})`).join(" "),
+    fields: GRID_PATTERN_FIELDS,
+    focusId: "start-x",
+  })];
+}
+
+function issueForPassSettings(err, target) {
+  const isPrint2 = target === "print2";
+  return createUserIssue({
+    id: isPrint2 ? "PASS2_SETTINGS" : "PASS1_SETTINGS",
+    title: isPrint2 ? "Print 2 pass settings incomplete" : "Pass settings incomplete",
+    message: `${err} Enter values in the fields below before saving.`,
+    fields: isPrint2 ? PRINT2_PASS_FIELDS : PRINT1_PASS_FIELDS,
+    focusId: isPrint2 ? "p2-lower-z" : "lower-z",
+  });
+}
+
+function issueForAngleOffset(err) {
+  return createUserIssue({
+    id: "Y_OFFSET_INVALID",
+    title: "Y offset settings need attention",
+    message: `${err} Pass 2 preview and export both require valid min/max Y offset values when Y offset is enabled.`,
+    fields: Y_OFFSET_FIELDS,
+    focusId: "p2-offset-min",
+  });
+}
+
+function issueForDotsOutside(err, fields, focusId = "start-x") {
+  return createUserIssue({
+    id: "DOTS_OUTSIDE_WELL",
+    title: "Dots fall outside the well",
+    message: `${err} Move the pattern, reduce spacing, or shrink the circle so every dot stays inside the well circle.`,
+    fields,
+    focusId,
+  });
+}
+
+function issueForValidationError(err, context = {}) {
+  if (!err) return null;
+  if (err.includes("Lower Z") || err.includes("Extrusion")) {
+    return issueForPassSettings(err, context.passTarget || "print1");
+  }
+  if (err.includes("Y offset")) {
+    return issueForAngleOffset(err);
+  }
+  if (err.includes("outside well")) {
+    const fields = context.circle
+      ? [
+        { label: "Circle center X", id: "circle-center-x" },
+        { label: "Circle center Y", id: "circle-center-y" },
+        { label: "Circle radius", id: "circle-radius" },
+      ]
+      : (context.print2 ? [{ label: "Print 2 Start X", id: "p2-start-x" }, { label: "Print 2 Start Y", id: "p2-start-y" }, ...GRID_PATTERN_FIELDS.slice(2)] : GRID_PATTERN_FIELDS);
+    return issueForDotsOutside(err, fields, context.focusId);
+  }
+  if (err.includes("Radius exceeds")) {
+    return createUserIssue({
+      id: "CIRCLE_RADIUS",
+      title: "Circle too large for well",
+      message: `${err} Reduce the circle radius or move the center.`,
+      fields: [{ label: "Circle radius", id: "circle-radius" }],
+      focusId: "circle-radius",
+    });
+  }
+  if (err.includes("Select at least one well")) {
+    return createUserIssue({
+      id: "BULK_NO_WELLS",
+      title: "No wells selected",
+      message: "Check at least one well in the bulk well grid before saving.",
+      fields: [{ label: "Wells to print", id: "bulk-well-grid" }],
+      focusId: null,
+    });
+  }
+  return createUserIssue({
+    id: "VALIDATION",
+    title: "Settings need attention",
+    message: err,
+    fields: context.fields || GRID_PATTERN_FIELDS,
+    focusId: context.focusId || "start-x",
+  });
+}
+
+function collectUserIssues() {
+  const issues = [];
+
+  const pass1Err = validatePassSettings(print1FieldTarget());
+  if (pass1Err) issues.push(issueForPassSettings(pass1Err, "print1"));
+
+  if (isSecondPassEnabled()) {
+    const pass2Err = validatePassSettings(print2FieldTarget());
+    if (pass2Err) issues.push(issueForPassSettings(pass2Err, "print2"));
+
+    if (el.p2AngleOffset.checked) {
+      const angleErr = validateAngleOffset();
+      if (angleErr) issues.push(issueForAngleOffset(angleErr));
+    } else if (getPrint2Mode() === "same") {
+      const print1 = collectPrint1Params();
+      const print2 = collectPrint2Params();
+      if (print2 && !print2.offsetInvalid && !passSettingsMatch(print1, print2)) {
+        issues.push(createUserIssue({
+          id: "PRINT2_PASS_DIFFERS",
+          title: "Print 2 uses different Z or E",
+          message: "Same pattern mode keeps Print 1 dot positions. Export runs the same XY path twice using Print 2 Lower Z, Upper Z, and E below.",
+          fields: PRINT2_PASS_FIELDS,
+          focusId: "p2-lower-z",
+          blocking: false,
+        }));
+      }
+    }
+
+    const print1 = collectPrint1Params();
+    const print2 = collectPrint2Params();
+    const err1 = validatePrintParams(print1);
+    if (err1) issues.push(issueForValidationError(err1, { focusId: "start-x" }));
+    if (print2 && !print2.offsetInvalid) {
+      const err2 = validatePrintParams(print2);
+      if (err2) {
+        issues.push(issueForValidationError(err2, {
+          print2: !el.p2AngleOffset.checked && getPrint2Mode() === "different",
+          focusId: el.p2AngleOffset.checked ? "p2-offset-max" : "p2-start-x",
+        }));
+      }
+    }
+  } else if (isBulkPrintEnabled()) {
+    const wells = getSelectedBulkWells();
+    if (!wells.length) {
+      issues.push(issueForValidationError("Error: Select at least one well to print."));
+    }
+    const ref = collectPrint1Params();
+    const refErr = validatePrintParams(ref);
+    if (refErr) {
+      const refSelected = wells.includes(ref.well);
+      issues.push(createUserIssue({
+        id: "BULK_REF_PATTERN",
+        title: "Reference well pattern invalid",
+        message: refSelected
+          ? `${refErr} The reference well (${ref.well}) defines the pattern copied to every selected well.`
+          : `${refErr} Bulk print always validates the reference well (${ref.well}) because it defines the template pattern, even when ${ref.well} is not checked. Fix the pattern fields above or re-check ${ref.well} to preview it.`,
+        fields: GRID_PATTERN_FIELDS,
+        focusId: "start-x",
+      }));
+    } else if (wells.length && !wells.includes(ref.well)) {
+      issues.push(createUserIssue({
+        id: "BULK_REF_NOT_SELECTED",
+        title: "Reference well is not selected",
+        message: `Reference well ${ref.well} is not checked in the well grid. Export still uses ${ref.well} as the pattern template. Check ${ref.well} if you want to preview it on the plate layout.`,
+        fields: [{ label: "Reference well", id: "well" }, { label: "Wells to print", id: "bulk-well-grid" }],
+        focusId: "bulk-well-grid",
+        blocking: false,
+      }));
+    }
+    issues.push(...issuesForBulkWellOutsideFailures(collectBulkWellOutsideFailures(wells)));
+  } else if (isCirclePrintEnabled()) {
+    const params = collectCircleParams();
+    const err = validateCircleParams(params);
+    if (err) issues.push(issueForValidationError(err, { circle: true }));
+  } else if (!pass1Err) {
+    const print1 = collectPrint1Params();
+    const err = validatePrintParams(print1);
+    if (err) issues.push(issueForValidationError(err, { focusId: "start-x" }));
+  }
+
+  const seen = new Set();
+  return issues.filter((issue) => {
+    if (seen.has(issue.id)) return false;
+    seen.add(issue.id);
+    return true;
+  });
+}
+
+function notifyPreviewIssues() {
+  const issues = collectUserIssues();
+  const key = issues.map((issue) => issue.id).sort().join("|");
+  if (!issues.length) dismissedPreviewIssueKey = "";
+  if (!previewIssueBootstrapped) {
+    previewIssueBootstrapped = true;
+    lastPreviewIssueKey = key;
+    return;
+  }
+  lastPreviewIssueKey = key;
+  if (!key || key === dismissedPreviewIssueKey) return;
+  showUserIssuesModal(issues, { source: "preview" });
+}
+
+function initUserIssueModal() {
+  if (!el.userIssueModal) return;
+  el.userIssueModalDismiss.addEventListener("click", () => {
+    hideUserIssueModal(lastPreviewIssueKey);
+  });
+  el.userIssueModalBackdrop.addEventListener("click", () => {
+    hideUserIssueModal(lastPreviewIssueKey);
+  });
+  el.userIssueModalFocus.addEventListener("click", () => {
+    hideUserIssueModal(lastPreviewIssueKey);
+    focusIssueField(modalFocusTargetId);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && el.userIssueModal && !el.userIssueModal.hidden) {
+      hideUserIssueModal(lastPreviewIssueKey);
+    }
+  });
+}
 
 const PRINT1_DOT_COLOR = "#2196F3";
 const PRINT2_DOT_COLOR = "#9333EA";
@@ -302,19 +632,37 @@ function getPrint2Mode() {
   return selected ? selected.value : "same";
 }
 
+function prepareExportState() {
+  syncWellNumberFromDropdown();
+  if (isCirclePrintEnabled()) return;
+  syncGridDotsFromLayout(el.dots, el.perRow, el.rows);
+  if (isSecondPassEnabled() && getPrint2Mode() === "different" && !el.p2AngleOffset.checked) {
+    syncGridDotsFromLayout(el.p2dots, el.p2perRow, el.p2rows);
+  }
+}
+
+function readPassFieldValues(fields) {
+  return {
+    lowerZ: parseEcalcFloat(fields.lowerZ.value),
+    upperZ: parseEcalcFloat(fields.upperZ.value),
+    extrusionE: parseEcalcFloat(fields.extrusionE.value),
+  };
+}
+
 function collectPrintParams(fields) {
+  const pass = readPassFieldValues(fields);
   return {
     well: fields.well.value,
-    startX: safeFloat(fields.startX.value),
-    startY: safeFloat(fields.startY.value),
+    wellNumber: fields.well.value,
+    startX: parsePatternFloat(fields.startX.value),
+    startY: parsePatternFloat(fields.startY.value),
     numDots: safeInt(fields.dots.value),
     perRow: safeInt(fields.perRow.value),
-    spacingX: safeFloat(fields.spacingX.value),
-    spacingY: safeFloat(fields.spacingY.value),
-    lowerZ: safeFloat(fields.lowerZ.value),
-    upperZ: safeFloat(fields.upperZ.value),
-    wellNumber: fields.well.value,
-    extrusionE: safeFloat(fields.extrusionE.value),
+    spacingX: parsePatternFloat(fields.spacingX.value),
+    spacingY: parsePatternFloat(fields.spacingY.value),
+    lowerZ: pass.lowerZ,
+    upperZ: pass.upperZ,
+    extrusionE: pass.extrusionE,
     annotate: el.annotate.checked,
   };
 }
@@ -326,38 +674,48 @@ function collectPrint1Params() {
 function collectPrint2PatternParams() {
   const fields = print2FieldTarget();
   const print1 = collectPrint1Params();
+  const pass = readPassFieldValues(fields);
   return {
     well: print1.well,
     wellNumber: print1.wellNumber,
-    startX: safeFloat(fields.startX.value),
-    startY: safeFloat(fields.startY.value),
+    startX: parsePatternFloat(fields.startX.value),
+    startY: parsePatternFloat(fields.startY.value),
     numDots: safeInt(fields.dots.value),
     perRow: safeInt(fields.perRow.value),
-    spacingX: safeFloat(fields.spacingX.value),
-    spacingY: safeFloat(fields.spacingY.value),
-    lowerZ: safeFloat(fields.lowerZ.value),
-    upperZ: safeFloat(fields.upperZ.value),
-    extrusionE: safeFloat(fields.extrusionE.value),
+    spacingX: parsePatternFloat(fields.spacingX.value),
+    spacingY: parsePatternFloat(fields.spacingY.value),
+    lowerZ: pass.lowerZ,
+    upperZ: pass.upperZ,
+    extrusionE: pass.extrusionE,
     annotate: el.annotate.checked,
   };
 }
 
 function getAngleOffsetSettings() {
+  const min = parseEcalcFloat(el.p2OffsetMin.value);
+  const max = parseEcalcFloat(el.p2OffsetMax.value);
+  const valid = validateAngleOffsetValues(min, max) === null;
   return {
     enabled: el.p2AngleOffset.checked,
-    min: safeFloat(el.p2OffsetMin.value),
-    max: safeFloat(el.p2OffsetMax.value),
+    min: valid ? min : 0,
+    max: valid ? max : 0,
+    minParsed: min,
+    maxParsed: max,
+    valid,
     sign: el.p2OffsetSide.value === "negative" ? -1 : 1,
   };
 }
 
 function buildAngledPrint2Dots(print2Params) {
+  const settings = getAngleOffsetSettings();
+  if (!settings.valid) return null;
+
   const print1 = collectPrint1Params();
   const print1Dots = computeGridDotsFromParams(print1);
   if (!print1Dots.length) return computeGridDotsFromParams(print2Params);
 
   const baseDots = print1Dots.map((dot) => ({ ...dot }));
-  const { min, max, sign } = getAngleOffsetSettings();
+  const { min, max, sign } = settings;
   const perRow = print2Params.perRow > 0 ? print2Params.perRow : print1.perRow;
   return applyProgressiveYOffset(baseDots, print1Dots, perRow, min, max, sign);
 }
@@ -393,12 +751,13 @@ function applyCircleDefaults(wellKey) {
 
 function collectCircleParams() {
   const well = el.well.value;
-  const centerX = safeFloat(el.circleCenterX.value);
-  const centerY = safeFloat(el.circleCenterY.value);
+  const centerX = parsePatternFloat(el.circleCenterX.value);
+  const centerY = parsePatternFloat(el.circleCenterY.value);
   const numDots = safeInt(el.circleDots.value);
-  const radiusMm = safeFloat(el.circleRadius.value);
-  const startAngleDeg = safeFloat(el.circleStartAngle.value);
+  const radiusMm = parsePatternFloat(el.circleRadius.value);
+  const startAngleDeg = parsePatternFloat(el.circleStartAngle.value);
   const customDots = computeCircleDots(centerX, centerY, radiusMm, numDots, startAngleDeg);
+  const pass = readPassFieldValues(print1FieldTarget());
   return {
     well,
     wellNumber: well,
@@ -407,9 +766,9 @@ function collectCircleParams() {
     numDots,
     radiusMm,
     startAngleDeg,
-    lowerZ: safeFloat(el.lowerZ.value),
-    upperZ: safeFloat(el.upperZ.value),
-    extrusionE: safeFloat(el.extrusionE.value),
+    lowerZ: pass.lowerZ,
+    upperZ: pass.upperZ,
+    extrusionE: pass.extrusionE,
     annotate: el.annotate.checked,
     customDots,
   };
@@ -433,7 +792,7 @@ function circleParamsToGcode(params) {
 }
 
 function defaultCircleFileName(params) {
-  return `well_${params.wellNumber}_circle_R${params.radiusMm.toFixed(2)}_Z${params.lowerZ.toFixed(2)}.txt`;
+  return `well_${params.wellNumber}_circle_R${formatCoordMm(params.radiusMm)}_Z${formatZMm(params.lowerZ)}.txt`;
 }
 
 function collectBulkParamsForWell(wellKey) {
@@ -549,6 +908,9 @@ function collectPrint2Params() {
 
   if (offsetOn) {
     const customDots = buildAngledPrint2Dots(params);
+    if (!customDots) {
+      return { ...params, offsetInvalid: true, customDots: null };
+    }
     return {
       ...params,
       numDots: customDots.length,
@@ -602,6 +964,10 @@ function updateModeUi() {
   el.p2AngleControls.hidden = !multi || !el.p2AngleOffset.checked;
   if (el.print1PatternNote) el.print1PatternNote.hidden = !multi;
   if (el.p2OffsetUsesPrint1Note) el.p2OffsetUsesPrint1Note.hidden = !offsetOn;
+  if (el.print2ModeFieldset) {
+    el.print2ModeFieldset.disabled = offsetOn;
+    el.print2ModeFieldset.classList.toggle("disabled", offsetOn);
+  }
   el.print2Controls.hidden = !multi || !differentMode;
   if (el.print2PatternFields) {
     el.print2PatternFields.hidden = !multi || !differentMode || offsetOn;
@@ -668,30 +1034,30 @@ function appendDotSequence(lines, dotCoords, params, annotate, zApproach, zRetra
     lines.push("");
     lines.push(`; Begin dot ${dotIndex + 1}`);
     if (annotate) {
-      lines.push(`G1 X${x.toFixed(2)} Y${y.toFixed(2)} F350  ; Move to dot position (X, Y) at 350 mm/min`);
+      lines.push(`G1 ${formatGcodeXY(x, y)} F350  ; Move to dot position (X, Y) at 350 mm/min`);
       lines.push(`G4 P200                ; Pause 200ms to stabilize`);
-      lines.push(`G1 Z${zApproach.toFixed(2)} F250          ; Move down to approach height at 250 mm/min`);
+      lines.push(`G1 Z${formatZMm(zApproach)} F250          ; Move down to approach height at 250 mm/min`);
       lines.push(`G4 P200                ; Pause 200ms`);
-      lines.push(`G1 Z${lowerZ.toFixed(2)} F30        ; Slowly descend to lower position (${lowerZ.toFixed(2)}mm) at 30 mm/min`);
+      lines.push(`G1 Z${formatZMm(lowerZ)} F30        ; Slowly descend to lower position (${formatZMm(lowerZ)}mm) at 30 mm/min`);
       lines.push(`G4 P500                ; Pause 500ms at lower position`);
-      lines.push(`G1 Z${upperZ.toFixed(2)} E ${extrusionE.toFixed(4)} F3 ; Move up to upper position (${upperZ.toFixed(2)}mm), extrude ${extrusionE.toFixed(4)}, slow at 3 mm/min`);
+      lines.push(`G1 Z${formatZMm(upperZ)} E ${formatExtrusionE(extrusionE)} F3 ; Move up to upper position (${formatZMm(upperZ)}mm), extrude ${formatExtrusionE(extrusionE)}, slow at 3 mm/min`);
       lines.push(`G4 S1.5                ; Wait 1.5 seconds for dispensing`);
-      lines.push(`G1 Z${zRetract.toFixed(2)} F80           ; Retract to ${zRetract.toFixed(2)}mm at 80 mm/min`);
+      lines.push(`G1 Z${formatZMm(zRetract)} F80           ; Retract to ${formatZMm(zRetract)}mm at 80 mm/min`);
       lines.push(`G4 P750                ; Pause 750ms`);
-      lines.push(`G1 Z${zSafe.toFixed(2)} F350             ; Lift to safe height (${zSafe.toFixed(2)}mm) at 350 mm/min`);
+      lines.push(`G1 Z${formatZMm(zSafe)} F350             ; Lift to safe height (${formatZMm(zSafe)}mm) at 350 mm/min`);
       lines.push(`G4 P200                ; Final pause 200ms`);
     } else {
-      lines.push(`G1 X${x.toFixed(2)} Y${y.toFixed(2)} F350`);
+      lines.push(`G1 ${formatGcodeXY(x, y)} F350`);
       lines.push(`G4 P200`);
-      lines.push(`G1 Z${zApproach.toFixed(2)} F250`);
+      lines.push(`G1 Z${formatZMm(zApproach)} F250`);
       lines.push(`G4 P200`);
-      lines.push(`G1 Z${lowerZ.toFixed(2)} F30`);
+      lines.push(`G1 Z${formatZMm(lowerZ)} F30`);
       lines.push(`G4 P500`);
-      lines.push(`G1 Z${upperZ.toFixed(2)} E ${extrusionE.toFixed(4)} F3`);
+      lines.push(`G1 Z${formatZMm(upperZ)} E ${formatExtrusionE(extrusionE)} F3`);
       lines.push(`G4 S1.5`);
-      lines.push(`G1 Z${zRetract.toFixed(2)} F80`);
+      lines.push(`G1 Z${formatZMm(zRetract)} F80`);
       lines.push(`G4 P750`);
-      lines.push(`G1 Z${zSafe.toFixed(2)} F350`);
+      lines.push(`G1 Z${formatZMm(zSafe)} F350`);
       lines.push(`G4 P200`);
     }
   });
@@ -714,9 +1080,9 @@ function buildGcode(params) {
   const lines = [];
 
   lines.push(`; G-code generated ${now}`);
-  lines.push(`; Well ${wellNumber} | Lower Z ${lowerZ.toFixed(2)} mm | Upper Z ${upperZ.toFixed(2)} mm | E ${extrusionE.toFixed(4)}`);
+  lines.push(`; Well ${wellNumber} | Lower Z ${formatZMm(lowerZ)} mm | Upper Z ${formatZMm(upperZ)} mm | E ${formatExtrusionE(extrusionE)}`);
   lines.push("");
-  lines.push(`BottomElevation: ${WELL_BOTTOM_Z.toFixed(2)}`);
+  lines.push(`BottomElevation: ${formatZMm(WELL_BOTTOM_Z)}`);
   lines.push("; Zbottom: ");
   lines.push("; Zplus: ");
   lines.push("; Zplusplus: ");
@@ -729,11 +1095,15 @@ function buildGcode(params) {
   lines.push("G4 P100");
   lines.push("");
 
-  const dotCoords = customDots && customDots.length
-    ? customDots
-    : computeGridDotsFromParams({
-      startX, startY, numDots, spacingX, spacingY, perRow: dotsPerRow,
-    });
+  const dotCoords = resolveParamsDots({
+    startX,
+    startY,
+    numDots,
+    spacingX,
+    spacingY,
+    perRow: dotsPerRow,
+    customDots,
+  });
   appendDotSequence(
     lines,
     dotCoords,
@@ -839,7 +1209,7 @@ function drawHorizontalSpacing(ctx, x1, x2, bottomRowY, spacingMm, dotR) {
 
   drawArrow(ctx, left, dimY, left + 7, dimY, { color, lineWidth: 2, headLength: 6, headWidth: 5 });
   drawArrow(ctx, right, dimY, right - 7, dimY, { color, lineWidth: 2, headLength: 6, headWidth: 5 });
-  drawDimensionLabel(ctx, `ΔX: ${spacingMm.toFixed(3)} mm`, (left + right) / 2, labelY, color, false);
+  drawDimensionLabel(ctx, `ΔX: ${formatCoordMm(spacingMm)} mm`, (left + right) / 2, labelY, color, false);
 }
 
 function drawVerticalSpacing(ctx, x, y1, y2, spacingMm, dotR) {
@@ -871,7 +1241,7 @@ function drawVerticalSpacing(ctx, x, y1, y2, spacingMm, dotR) {
 
   drawArrow(ctx, dimX, top, dimX, top + 7, { color, lineWidth: 2, headLength: 6, headWidth: 5 });
   drawArrow(ctx, dimX, bottom, dimX, bottom - 7, { color, lineWidth: 2, headLength: 6, headWidth: 5 });
-  drawDimensionLabel(ctx, `ΔY: ${spacingMm.toFixed(3)} mm`, dimX + 22, (top + bottom) / 2, color, true);
+  drawDimensionLabel(ctx, `ΔY: ${formatCoordMm(spacingMm)} mm`, dimX + 22, (top + bottom) / 2, color, true);
 }
 
 function lastDotInRow(dotPositions, rowIndex, perRow) {
@@ -888,6 +1258,38 @@ function rowSpacingPair(dotPositions, rowIndex, perRow) {
   const second = dotPositions[start + 1];
   if (Math.abs(first.absY - second.absY) > 0.01) return null;
   return [first, second];
+}
+
+function measuredHorizontalSpacing(positions, perRow) {
+  if (perRow < 2 || positions.length < 2) return null;
+  const alignedPair = rowSpacingPair(positions, 0, perRow);
+  if (alignedPair) {
+    return {
+      pair: alignedPair,
+      distMm: Math.abs(alignedPair[1].absX - alignedPair[0].absX),
+    };
+  }
+  const first = positions[0];
+  const second = positions[1];
+  const distMm = Math.abs(second.absX - first.absX);
+  if (distMm < 0.001) return null;
+  return { pair: [first, second], distMm };
+}
+
+function measuredVerticalSpacing(positions, perRow, rows) {
+  if (rows < 2 || perRow < 1 || positions.length < perRow + 1) return null;
+  const topDot = lastDotInRow(positions, 0, perRow);
+  const bottomDot = lastDotInRow(positions, 1, perRow);
+  if (!topDot || !bottomDot) return null;
+  const distMm = Math.abs(bottomDot.absY - topDot.absY);
+  if (distMm < 0.001) return null;
+  return { topDot, bottomDot, distMm };
+}
+
+function print2PatternDiffersFromPrint1(print1, print2) {
+  if (!print2) return false;
+  if (print2.customDots && print2.customDots.length) return true;
+  return getPrint2Mode() === "different";
 }
 
 function drawToolpath(ctx, dotPositions, dotR, strokeColor = PRINT1_TOOLPATH_COLOR) {
@@ -967,7 +1369,7 @@ function drawPreviewLegend(ctx, cw, ch, { showPrint2 = false, showOverlap = fals
     rows.push({ type: "dot", label: "Print 2", color: PRINT2_DOT_COLOR });
   }
   if (showOverlap) {
-    rows.push({ type: "dot", label: "Multi-point site", color: OVERLAP_DOT_COLOR });
+    rows.push({ type: "dot", label: "Same XY (2 passes)", color: OVERLAP_DOT_COLOR });
   }
   if (showOutside) {
     rows.push({ type: "dot", label: "Outside well", color: OUTSIDE_WELL_DOT_COLOR });
@@ -1024,9 +1426,7 @@ function wellToCanvas(wellKey, refCx, refCy, pxCenterX, pxCenterY, scale) {
 function computeDotPositions(cfg, refCx, refCy, pxCenterX, pxCenterY, scale, rPx, dotR) {
   const positions = [];
   const wellKey = cfg.well;
-  const sourceDots = cfg.customDots && cfg.customDots.length
-    ? cfg.customDots
-    : computeGridDotsFromParams(cfg);
+  const sourceDots = resolveParamsDots(cfg);
 
   sourceDots.forEach((dot) => {
     const px = pxCenterX + (dot.absX - refCx) * scale;
@@ -1036,9 +1436,31 @@ function computeDotPositions(cfg, refCx, refCy, pxCenterX, pxCenterY, scale, rPx
   });
 
   const rows = cfg.perRow > 0 ? Math.ceil(cfg.numDots / cfg.perRow) : 0;
-  const gridWmm = Math.max(0, (cfg.perRow - 1) * cfg.spacingX);
-  const gridHmm = Math.max(0, (rows - 1) * cfg.spacingY);
+  let gridWmm = Math.max(0, (cfg.perRow - 1) * cfg.spacingX);
+  let gridHmm = Math.max(0, (rows - 1) * cfg.spacingY);
+  if (cfg.customDots && cfg.customDots.length) {
+    const bounds = gridBoundsFromAbsDots(cfg.customDots);
+    gridWmm = bounds.gridWmm;
+    gridHmm = bounds.gridHmm;
+  }
   return { positions, rows, gridWmm, gridHmm };
+}
+
+function gridBoundsFromAbsDots(dots) {
+  if (!dots.length) return { gridWmm: 0, gridHmm: 0 };
+  const xs = dots.map((dot) => dot.absX);
+  const ys = dots.map((dot) => dot.absY);
+  return {
+    gridWmm: Math.max(...xs) - Math.min(...xs),
+    gridHmm: Math.max(...ys) - Math.min(...ys),
+  };
+}
+
+function formatPassSummary(params, label) {
+  if (params.lowerZ == null || params.upperZ == null || params.extrusionE == null) {
+    return "";
+  }
+  return `${label}: Lower Z ${formatZMm(params.lowerZ)}, Upper Z ${formatZMm(params.upperZ)}, E ${formatExtrusionE(params.extrusionE)}`;
 }
 
 function drawWellOutline(ctx, wellKey, refCx, refCy, pxCenterX, pxCenterY, scale, rPx) {
@@ -1063,24 +1485,33 @@ function drawPrintDots(ctx, positions, color, dotR) {
   });
 }
 
-function drawSpacingIndicators(ctx, print1Positions, perRow, rows, spacingX, spacingY, dotR, anchorPositions) {
+function drawSpacingIndicators(ctx, positions, perRow, rows, dotR, anchorPositions) {
   const bottomY = anchorPositions.length
     ? Math.max(...anchorPositions.map((d) => d.py))
     : 0;
 
-  if (spacingX > 0 && perRow >= 2) {
-    const pair = rowSpacingPair(print1Positions, 0, perRow);
-    if (pair) {
-      drawHorizontalSpacing(ctx, pair[0].px, pair[1].px, bottomY, spacingX, dotR);
-    }
+  const horizontal = measuredHorizontalSpacing(positions, perRow);
+  if (horizontal) {
+    drawHorizontalSpacing(
+      ctx,
+      horizontal.pair[0].px,
+      horizontal.pair[1].px,
+      bottomY,
+      horizontal.distMm,
+      dotR
+    );
   }
 
-  if (rows > 1 && perRow > 0 && print1Positions.length >= perRow + 1 && spacingY > 0) {
-    const topDot = lastDotInRow(print1Positions, 0, perRow);
-    const bottomDot = lastDotInRow(print1Positions, 1, perRow);
-    if (topDot && bottomDot) {
-      drawVerticalSpacing(ctx, topDot.px, topDot.py, bottomDot.py, spacingY, dotR);
-    }
+  const vertical = measuredVerticalSpacing(positions, perRow, rows);
+  if (vertical) {
+    drawVerticalSpacing(
+      ctx,
+      vertical.topDot.px,
+      vertical.topDot.py,
+      vertical.bottomDot.py,
+      vertical.distMm,
+      dotR
+    );
   }
 }
 
@@ -1149,7 +1580,7 @@ function drawCircleRadiusGuide(ctx, centerPx, centerPy, edgePx, edgePy, radiusMm
   ctx.fillStyle = "#ea580c";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillText(`R: ${radiusMm.toFixed(2)} mm`, labelX, labelY);
+  ctx.fillText(`R: ${formatCoordMm(radiusMm)} mm`, labelX, labelY);
   ctx.restore();
 }
 
@@ -1239,8 +1670,6 @@ function drawWellDetailPreview(canvasEl, params, positionsOut) {
     printData.positions,
     params.perRow,
     printData.rows,
-    params.spacingX,
-    params.spacingY,
     dotR,
     printData.positions
   );
@@ -1285,14 +1714,15 @@ function drawBulkDetailPreview() {
   if (el.bulkDetailMeta) {
     el.bulkDetailMeta.textContent = [
       `Well ${wellKey}`,
-      `Start X ${params.startX.toFixed(2)} Y ${params.startY.toFixed(2)}`,
-      `grid ${printData.gridWmm.toFixed(2)} × ${printData.gridHmm.toFixed(2)} mm`,
+      `Start X ${formatCoordMm(params.startX)} Y ${formatCoordMm(params.startY)}`,
+      `grid ${formatCoordMm(printData.gridWmm)} × ${formatCoordMm(printData.gridHmm)} mm`,
       `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideWellMetaNote(printData.positions)}`,
     ].join(" | ");
   }
 }
 
 function drawBulkPreview() {
+  prepareExportState();
   const selected = getSelectedBulkWells();
   const refParams = collectPrint1Params();
   const bounds = getPlateBoundsMm();
@@ -1314,6 +1744,7 @@ function drawBulkPreview() {
     ctx.fillText("Select one or more wells to preview", cw / 2, ch / 2);
     setPreviewMeta("24-well plate | No wells selected");
     drawBulkDetailPreview();
+    notifyPreviewIssues();
     return;
   }
 
@@ -1346,7 +1777,7 @@ function drawBulkPreview() {
 
   selected.forEach((wellKey) => {
     const params = collectBulkParamsForWell(wellKey);
-    const dots = computeGridDotsFromParams(params);
+    const dots = resolveParamsDots(params);
     dots.forEach((dot) => {
       const { px, py } = plateMmToCanvas(dot.absX, dot.absY, bounds, cw, ch, margin);
       const outsideWell = !isDotInsideWellMm(dot.absX, dot.absY, wellKey);
@@ -1377,13 +1808,15 @@ function drawBulkPreview() {
   setPreviewMeta([
     `Bulk: ${selected.length} well${selected.length === 1 ? "" : "s"}`,
     `Ref ${refParams.well}`,
-    `grid ${Math.max(0, (refParams.perRow - 1) * refParams.spacingX).toFixed(2)} × ${Math.max(0, (Math.ceil(refParams.numDots / refParams.perRow) - 1) * refParams.spacingY).toFixed(2)} mm`,
+    `grid ${formatCoordMm(Math.max(0, (refParams.perRow - 1) * refParams.spacingX))} × ${formatCoordMm(Math.max(0, (Math.ceil(refParams.numDots / refParams.perRow) - 1) * refParams.spacingY))} mm`,
     `Ø ${WELL_DIAM_MM.toFixed(1)} mm${bulkOutsideNote}`,
   ].join(" | "));
   drawBulkDetailPreview();
+  notifyPreviewIssues();
 }
 
 function drawCirclePreview() {
+  prepareExportState();
   const params = collectCircleParams();
   const canvas = el.canvasCircle || el.canvasStd;
   if (!canvas) return;
@@ -1453,13 +1886,15 @@ function drawCirclePreview() {
   });
 
   setPreviewMeta([
-    `Well ${params.well} | Circle R ${params.radiusMm.toFixed(2)} mm`,
+    `Well ${params.well} | Circle R ${formatCoordMm(params.radiusMm)} mm`,
     `${positions.length} dots @ ${params.startAngleDeg.toFixed(0)}° start`,
     `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideWellMetaNote(positions)}`,
   ].join(" | "));
+  notifyPreviewIssues();
 }
 
 function drawPreview() {
+  prepareExportState();
   if (isBulkPrintEnabled()) {
     drawBulkPreview();
     return;
@@ -1473,8 +1908,9 @@ function drawPreview() {
   const showPrint2 = isSecondPassEnabled();
   const print2 = showPrint2 ? collectPrint2Params() : null;
   const view = getPreviewView();
+  const print2Ready = print2 && !print2.offsetInvalid;
   const showPrint1Layer = view === "1" || view === "both";
-  const showPrint2Layer = showPrint2 && print2 && (view === "2" || view === "both");
+  const showPrint2Layer = showPrint2 && print2Ready && (view === "2" || view === "both");
 
   const refWell = DEFAULT_24WELL_CENTERS[print1.well] || DEFAULT_24WELL_CENTERS.A1;
   const refCx = refWell[0];
@@ -1495,7 +1931,7 @@ function drawPreview() {
   const print1Data = computeDotPositions(
     print1, refCx, refCy, pxCenterX, pxCenterY, scale, rPx, dotR
   );
-  const print2Data = print2
+  const print2Data = print2Ready
     ? computeDotPositions(print2, refCx, refCy, pxCenterX, pxCenterY, scale, rPx, dotR)
     : null;
 
@@ -1550,13 +1986,18 @@ function drawPreview() {
   if (showPrint1Layer) spacingAnchors.push(...print1Data.positions);
   if (showPrint2Layer && print2Data) spacingAnchors.push(...print2Data.positions);
   if (spacingAnchors.length) {
+    const usePrint2Spacing = print2Data && (
+      view === "2"
+      || (view === "both" && print2PatternDiffersFromPrint1(print1, print2))
+    );
+    const spacingPositions = usePrint2Spacing ? print2Data.positions : print1Data.positions;
+    const spacingCfg = usePrint2Spacing ? print2 : print1;
+    const spacingRows = usePrint2Spacing ? print2Data.rows : print1Data.rows;
     drawSpacingIndicators(
       ctx,
-      print1Data.positions,
-      print1.perRow,
-      print1Data.rows,
-      print1.spacingX,
-      print1.spacingY,
+      spacingPositions,
+      spacingCfg.perRow,
+      spacingRows,
       dotR,
       spacingAnchors
     );
@@ -1570,28 +2011,39 @@ function drawPreview() {
   if (showPrint2Layer && print2Data) legendPositions.push(...print2Data.positions);
   const outsideNote = outsideWellMetaNote(legendPositions);
 
+  const sameModeRepeat = showPrint2 && print2Ready && getPrint2Mode() === "same"
+    && !print2.customDots && passSettingsMatch(print1, print2);
   drawPreviewLegend(ctx, cw, ch, {
     showPrint2,
     showOverlap: showBothLayers && overlapSplit && overlapSplit.overlaps.length > 0,
     showOutside: legendPositions.some((dot) => dot.outsideWell),
   });
 
+  const passMeta = showPrint2 && print2Ready
+    ? `${formatPassSummary(print1, "Pass 1")} | ${formatPassSummary(print2, "Pass 2")}${sameModeRepeat ? " | Export runs identical XY twice" : ""}`
+    : "";
+
   if (showPrint2 && print2 && print2Data) {
     const wellLabel = `Well ${print1.well}`;
     if (view === "both") {
       setPreviewMeta([
-        `${wellLabel} | Pass 1 grid ${print1Data.gridWmm.toFixed(2)} × ${print1Data.gridHmm.toFixed(2)} mm`,
-        `Pass 2 grid ${print2Data.gridWmm.toFixed(2)} × ${print2Data.gridHmm.toFixed(2)} mm`,
+        `${wellLabel} | Pass 1 grid ${formatCoordMm(print1Data.gridWmm)} × ${formatCoordMm(print1Data.gridHmm)} mm`,
+        `Pass 2 grid ${formatCoordMm(print2Data.gridWmm)} × ${formatCoordMm(print2Data.gridHmm)} mm`,
+        passMeta,
         `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`,
-      ].join(" | "));
+      ].filter(Boolean).join(" | "));
     } else if (view === "2") {
-      setPreviewMeta(`${wellLabel} | Pass 2 grid ${print2Data.gridWmm.toFixed(2)} × ${print2Data.gridHmm.toFixed(2)} mm | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`);
+      setPreviewMeta(`${wellLabel} | Pass 2 grid ${formatCoordMm(print2Data.gridWmm)} × ${formatCoordMm(print2Data.gridHmm)} mm | ${passMeta} | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`);
     } else {
-      setPreviewMeta(`${wellLabel} | Pass 1 grid ${print1Data.gridWmm.toFixed(2)} × ${print1Data.gridHmm.toFixed(2)} mm | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`);
+      setPreviewMeta(`${wellLabel} | Pass 1 grid ${formatCoordMm(print1Data.gridWmm)} × ${formatCoordMm(print1Data.gridHmm)} mm | ${passMeta} | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`);
     }
+  } else if (showPrint2 && print2?.offsetInvalid) {
+    setPreviewMeta(`Well ${print1.well} | Pass 2 hidden until Y offset min/max are valid | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`);
   } else {
-    setPreviewMeta(`Well Ø ${WELL_DIAM_MM.toFixed(1)} mm | Grid ${print1Data.gridWmm.toFixed(2)} x ${print1Data.gridHmm.toFixed(2)} mm${outsideNote}`);
+    setPreviewMeta(`Well Ø ${WELL_DIAM_MM.toFixed(1)} mm | Grid ${formatCoordMm(print1Data.gridWmm)} x ${formatCoordMm(print1Data.gridHmm)} mm${outsideNote}`);
   }
+
+  notifyPreviewIssues();
 }
 
 function onPrint1GridLayoutInput() {
@@ -1661,50 +2113,61 @@ async function saveGcodeFile(contents, defaultFileName) {
 }
 
 async function saveGcode() {
+  prepareExportState();
   const passErr = validatePassSettings(print1FieldTarget());
   if (passErr) {
-    el.saveStatus.textContent = passErr;
+    reportSaveFailure(issueForPassSettings(passErr, "print1"), passErr);
     return;
   }
   const print1 = collectPrint1Params();
   const err = validatePrintParams(print1);
   if (err) {
-    el.saveStatus.textContent = err;
+    reportSaveFailure(issueForValidationError(err, { focusId: "start-x" }), err);
     return;
   }
   await saveGcodeFile(paramsToGcode(print1), defaultFileNameForParams(print1, ""));
 }
 
 async function savePrint1Gcode() {
+  prepareExportState();
   const passErr = validatePassSettings(print1FieldTarget());
   if (passErr) {
-    el.saveStatus.textContent = passErr;
+    reportSaveFailure(issueForPassSettings(passErr, "print1"), passErr);
     return;
   }
   const print1 = collectPrint1Params();
   const err = validatePrintParams(print1);
   if (err) {
-    el.saveStatus.textContent = err;
+    reportSaveFailure(issueForValidationError(err, { focusId: "start-x" }), err);
     return;
   }
   await saveGcodeFile(paramsToGcode(print1), defaultFileNameForParams(print1, "_print1"));
 }
 
 async function savePrint2Gcode() {
+  prepareExportState();
   const passErr = validatePassSettings(print2FieldTarget());
   if (passErr) {
-    el.saveStatus.textContent = passErr;
+    reportSaveFailure(issueForPassSettings(passErr, "print2"), passErr);
     return;
   }
   const print2 = collectPrint2Params();
+  if (print2?.offsetInvalid) {
+    const angleErr = validateAngleOffset() || "Error: Y offset settings are invalid.";
+    reportSaveFailure(issueForAngleOffset(angleErr), angleErr);
+    return;
+  }
   const err2 = validatePrintParams(print2);
   if (err2) {
-    el.saveStatus.textContent = err2;
+    reportSaveFailure(issueForValidationError(err2, {
+      print2: !el.p2AngleOffset.checked && getPrint2Mode() === "different",
+      focusId: el.p2AngleOffset.checked ? "p2-offset-max" : "p2-start-x",
+    }), err2);
     return;
   }
   const errAngle = validateAngleOffset();
   if (errAngle) {
-    el.saveStatus.textContent = errAngle;
+    reportSaveFailure(issueForAngleOffset(errAngle), errAngle);
     return;
   }
   await saveGcodeFile(
@@ -1714,62 +2177,93 @@ async function savePrint2Gcode() {
 }
 
 async function saveCombinedGcode() {
+  prepareExportState();
   const pass1Err = validatePassSettings(print1FieldTarget());
   if (pass1Err) {
-    el.saveStatus.textContent = pass1Err;
+    reportSaveFailure(issueForPassSettings(pass1Err, "print1"), pass1Err);
     return;
   }
   const pass2Err = validatePassSettings(print2FieldTarget());
   if (pass2Err) {
-    el.saveStatus.textContent = pass2Err;
+    reportSaveFailure(issueForPassSettings(pass2Err, "print2"), pass2Err);
     return;
   }
   const print1 = collectPrint1Params();
   const print2 = collectPrint2Params();
+  if (print2?.offsetInvalid) {
+    const angleErr = validateAngleOffset() || "Error: Y offset settings are invalid.";
+    reportSaveFailure(issueForAngleOffset(angleErr), angleErr);
+    return;
+  }
   const err1 = validatePrintParams(print1);
   if (err1) {
-    el.saveStatus.textContent = err1;
+    reportSaveFailure(issueForValidationError(err1, { focusId: "start-x" }), err1);
     return;
   }
   const err2 = validatePrintParams(print2);
   if (err2) {
-    el.saveStatus.textContent = err2;
+    reportSaveFailure(issueForValidationError(err2, {
+      print2: !el.p2AngleOffset.checked && getPrint2Mode() === "different",
+      focusId: el.p2AngleOffset.checked ? "p2-offset-max" : "p2-start-x",
+    }), err2);
     return;
   }
   const errAngle = validateAngleOffset();
   if (errAngle) {
-    el.saveStatus.textContent = errAngle;
+    reportSaveFailure(issueForAngleOffset(errAngle), errAngle);
     return;
   }
   const sameMode = getPrint2Mode() === "same";
   await saveGcodeFile(
     buildCombinedGcode(print1, print2, sameMode),
-    `well_${print1.wellNumber}_2pass.txt`
+    defaultFileNameForParams(print1, "_2pass")
   );
 }
 
 function validateBulkExport() {
+  const issues = [];
   const passErr = validatePassSettings(print1FieldTarget());
-  if (passErr) return { error: passErr };
+  if (passErr) {
+    issues.push(issueForPassSettings(passErr, "print1"));
+    return { error: passErr, issues };
+  }
   const ref = collectPrint1Params();
-  const err = validatePrintParams(ref);
-  if (err) return { error: err };
   const wells = getSelectedBulkWells();
   if (!wells.length) {
-    return { error: "Error: Select at least one well to print." };
+    const err = "Error: Select at least one well to print.";
+    issues.push(issueForValidationError(err));
+    return { error: err, issues };
   }
-  for (const wellKey of wells) {
-    const params = collectBulkParamsForWell(wellKey);
-    const wellErr = validateDotsInsideWell(params, wellKey);
-    if (wellErr) return { error: wellErr };
+  const refErr = validatePrintParams(ref);
+  if (refErr) {
+    const refSelected = wells.includes(ref.well);
+    issues.push(createUserIssue({
+      id: "BULK_REF_PATTERN",
+      title: "Reference well pattern invalid",
+      message: refSelected
+        ? `${refErr} The reference well (${ref.well}) defines the pattern copied to every selected well.`
+        : `${refErr} Bulk print always validates the reference well (${ref.well}) because it defines the template pattern, even when ${ref.well} is not checked. Fix the pattern fields above.`,
+      fields: GRID_PATTERN_FIELDS,
+      focusId: "start-x",
+    }));
+    return { error: refErr, issues };
+  }
+  const outsideFailures = collectBulkWellOutsideFailures(wells);
+  if (outsideFailures.length) {
+    issues.push(...issuesForBulkWellOutsideFailures(outsideFailures));
+    const error = outsideFailures.length === 1
+      ? outsideFailures[0].wellErr
+      : `Error: ${outsideFailures.length} selected wells have dots outside the well.`;
+    return { error, issues };
   }
   return { ref, wells };
 }
 
 async function saveBulkGcodeCombined() {
+  prepareExportState();
   const validated = validateBulkExport();
   if (validated.error) {
-    el.saveStatus.textContent = validated.error;
+    reportSaveFailure(validated.issues || [validated.issue], validated.error);
     return;
   }
   const { ref, wells } = validated;
@@ -1780,24 +2274,26 @@ async function saveBulkGcodeCombined() {
 }
 
 async function saveCircleGcode() {
+  prepareExportState();
   const passErr = validatePassSettings(print1FieldTarget());
   if (passErr) {
-    el.saveStatus.textContent = passErr;
+    reportSaveFailure(issueForPassSettings(passErr, "print1"), passErr);
     return;
   }
   const params = collectCircleParams();
   const err = validateCircleParams(params);
   if (err) {
-    el.saveStatus.textContent = err;
+    reportSaveFailure(issueForValidationError(err, { circle: true }), err);
     return;
   }
   await saveGcodeFile(circleParamsToGcode(params), defaultCircleFileName(params));
 }
 
 async function saveBulkGcodeIndividual() {
+  prepareExportState();
   const validated = validateBulkExport();
   if (validated.error) {
-    el.saveStatus.textContent = validated.error;
+    reportSaveFailure(validated.issues || [validated.issue], validated.error);
     return;
   }
   const { wells } = validated;
@@ -1815,10 +2311,10 @@ async function saveBulkGcodeIndividual() {
     return;
   }
   if (result.error) {
-    const partial = result.paths?.length
-      ? ` (${result.paths.length} file${result.paths.length === 1 ? "" : "s"} written before failure)`
+    const rolledBack = result.paths?.length
+      ? ` (${result.paths.length} file${result.paths.length === 1 ? "" : "s"} written then rolled back)`
       : "";
-    el.saveStatus.textContent = `Save failed: ${result.message}${partial}`;
+    el.saveStatus.textContent = `Save failed: ${result.message}${rolledBack}`;
     return;
   }
   const count = result.paths.length;
@@ -1925,6 +2421,17 @@ function initMultiPrint() {
 
   el.p2AngleOffset.addEventListener("change", () => {
     updateModeUi();
+    if (el.p2AngleOffset.checked) {
+      dismissedPreviewIssueKey = "";
+      showUserIssuesModal([createUserIssue({
+        id: "Y_OFFSET_MODE",
+        title: "Y offset uses Print 1 pattern",
+        message: "Same vs Different pattern is disabled while Y offset is on. Pass 2 dot positions come from Print 1 Start X/Y, dots, and spacing, with min/max Y offset applied per column. Edit Print 1 pattern fields and Y offset fields below.",
+        fields: [...GRID_PATTERN_FIELDS, ...Y_OFFSET_FIELDS],
+        focusId: "p2-offset-min",
+        blocking: false,
+      })], { source: "preview" });
+    }
     drawPreview();
   });
   [el.p2OffsetMin, el.p2OffsetMax].forEach((input) => {
@@ -1990,8 +2497,35 @@ function initTabs() {
   setAppMode(getAppMode());
 }
 
+function applyEcalcToExtrusion(targetPass) {
+  const volUl = parseEcalcFloat(el.ecalcVolUl.value);
+  const needleRatio = parseEcalcFloat(el.ecalcNeedleRatio.value);
+  if (volUl === null || needleRatio === null) {
+    reportSaveFailure(createUserIssue({
+      id: "ECALC_INCOMPLETE",
+      title: "Calculator inputs incomplete",
+      message: "Enter volume per injection and needle ratio (and other calculator fields) before applying E to an extrusion field.",
+      fields: [
+        { label: "Volume per injection (µl)", id: "ecalc-vol-ul" },
+        { label: "Needle ratio (mm/µl)", id: "ecalc-needle-ratio" },
+      ],
+      focusId: "ecalc-vol-ul",
+    }), "Complete the E-value calculator inputs first.");
+    return;
+  }
+  const eVal = needleRatio * volUl;
+  const usePrint2 = targetPass === "print2";
+  const target = usePrint2 ? el.p2extrusionE : el.extrusionE;
+  target.value = formatExtrusionE(eVal);
+  if (usePrint2) markPrint2PassCustomized();
+  const passLabel = usePrint2 ? "Print 2" : "Print 1";
+  el.saveStatus.textContent = `Applied E = ${formatExtrusionE(eVal)} to ${passLabel} extrusion field.`;
+  drawPreview();
+}
+
 populateWells();
 document.body.dataset.appMode = "standard";
+initUserIssueModal();
 initMultiPrint();
 initBulkPrint();
 initCirclePrint();
@@ -2068,6 +2602,12 @@ el.ecalcToggle.addEventListener("click", () => {
 [el.ecalcCells, el.ecalcVolUl, el.ecalcNeedleRatio, el.ecalcTipMm].forEach((i) => {
   i.addEventListener("input", updateEcalc);
 });
+if (el.ecalcApplyP1) {
+  el.ecalcApplyP1.addEventListener("click", () => applyEcalcToExtrusion("print1"));
+}
+if (el.ecalcApplyP2) {
+  el.ecalcApplyP2.addEventListener("click", () => applyEcalcToExtrusion("print2"));
+}
 
 function findClosestDot(canvasEl, positions, clientX, clientY, hitRadius = 15) {
   const rect = canvasEl.getBoundingClientRect();
@@ -2093,10 +2633,10 @@ function showDotCoordLabel(closest) {
   if (closest) {
     let printLabel = "Dot";
     if (closest.wellKey) printLabel = `Well ${closest.wellKey} dot`;
-    else if (closest.printNum === "both") printLabel = "Multi-point site";
+    else if (closest.printNum === "both") printLabel = "Same XY (2 passes) dot";
     else if (closest.printNum) printLabel = `Print ${closest.printNum} dot`;
     const outsideNote = closest.outsideWell ? " | outside well" : "";
-    el.coordLabel.textContent = `${printLabel}: X = ${closest.absX.toFixed(3)} mm | Y = ${closest.absY.toFixed(3)} mm${outsideNote}`;
+    el.coordLabel.textContent = `${printLabel}: X = ${formatCoordMm(closest.absX)} mm | Y = ${formatCoordMm(closest.absY)} mm${outsideNote}`;
   } else {
     el.coordLabel.textContent = COORD_LABEL_IDLE;
   }
