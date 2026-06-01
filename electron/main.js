@@ -32,7 +32,7 @@ function createWindow() {
     height: 860,
     minWidth: 1000,
     minHeight: 700,
-    show: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -50,6 +50,9 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ipcMain.handle("save-gcode", async (_event, payload) => {
+    if (!payload || typeof payload.defaultFileName !== "string" || typeof payload.contents !== "string") {
+      return { cancelled: false, error: true, message: "Invalid save payload." };
+    }
     const { defaultFileName, contents } = payload;
     const response = await dialog.showSaveDialog({
       title: "Save G-code as",
@@ -61,12 +64,24 @@ app.whenReady().then(() => {
       return { cancelled: true };
     }
 
-    fs.writeFileSync(response.filePath, contents, "utf8");
+    try {
+      fs.writeFileSync(response.filePath, contents, "utf8");
+    } catch (err) {
+      return { cancelled: false, error: true, message: err.message || String(err) };
+    }
     saveLastPath(path.dirname(response.filePath));
     return { cancelled: false, path: response.filePath };
   });
 
   ipcMain.handle("save-gcode-files", async (_event, payload) => {
+    if (!payload || !Array.isArray(payload.files) || payload.files.length === 0) {
+      return { cancelled: false, error: true, message: "No files to save." };
+    }
+    for (const file of payload.files) {
+      if (!file || typeof file.fileName !== "string" || typeof file.contents !== "string") {
+        return { cancelled: false, error: true, message: "Invalid file entry in save payload." };
+      }
+    }
     const { files } = payload;
     const response = await dialog.showOpenDialog({
       title: "Choose folder for per-well G-code files",
@@ -80,11 +95,22 @@ app.whenReady().then(() => {
 
     const dir = response.filePaths[0];
     const paths = [];
-    files.forEach(({ fileName, contents }) => {
-      const filePath = path.join(dir, fileName);
-      fs.writeFileSync(filePath, contents, "utf8");
-      paths.push(filePath);
-    });
+    try {
+      files.forEach(({ fileName, contents }) => {
+        const filePath = path.join(dir, fileName);
+        fs.writeFileSync(filePath, contents, "utf8");
+        paths.push(filePath);
+      });
+    } catch (err) {
+      paths.forEach((filePath) => {
+        try {
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        } catch (_unlinkErr) {
+          // Best-effort rollback if a later file fails.
+        }
+      });
+      return { cancelled: false, error: true, message: err.message || String(err), paths: [] };
+    }
     saveLastPath(dir);
     return { cancelled: false, dir, paths };
   });

@@ -103,6 +103,8 @@ body {
 .controls .standard-grid-only > label:first-child,
 .controls .circle-print-section > label:first-child,
 .controls .print-2-controls > label:first-child,
+.controls .print-2-pattern-fields > label:first-child,
+.controls .print-2-pass-fields > label:first-child,
 .controls .print-2-angle-controls > label:first-child {
   margin-top: 0;
 }
@@ -150,10 +152,16 @@ body {
 .standard-grid-only,
 .circle-print-section,
 .print-2-controls,
+.print-2-pattern-fields,
+.print-2-pass-fields,
 .print-2-angle-controls {
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+
+[hidden] {
+  display: none !important;
 }
 
 .buttons {
@@ -565,11 +573,24 @@ body[data-app-mode="circle-print"] #circle-preview-wrap {
   background: #f8fafc;
 }
 
-.print-2-pattern-heading {
+.print-2-pass-fields {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #dbe2ea;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.print-2-pattern-heading,
+.print-2-pass-heading {
   margin: 0 0 6px;
   font-size: 14px;
   font-weight: 600;
   color: #374151;
+}
+
+.print-2-pass-note {
+  margin: 0 0 10px;
 }
 
 .print-2-pattern-note,

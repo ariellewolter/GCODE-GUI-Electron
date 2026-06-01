@@ -1,31 +1,45 @@
-const WELL_BOTTOM_Z = 2.35;
-const DEFAULT_LOWER_Z_OFFSET = 1.5;
-const DEFAULT_UPPER_Z_OFFSET = 1.51;
-const DEFAULT_EXTRUSION = 0.0105;
-const WELL_DIAM_MM = 14.5;
+/* global GcodeCore */
+const {
+  WELL_BOTTOM_Z,
+  DEFAULT_LOWER_Z_OFFSET,
+  DEFAULT_UPPER_Z_OFFSET,
+  DEFAULT_EXTRUSION,
+  WELL_DIAM_MM,
+  WELL_PITCH_X_MM,
+  WELL_PITCH_Y_MM,
+  ROW_KEYS,
+  COL_KEYS,
+  WELL_RADIUS_MM,
+  OVERLAP_TOLERANCE_MM,
+  MAX_GRID_DOTS,
+  MAX_GRID_ROWS,
+  MAX_GRID_PER_ROW,
+  DEFAULT_24WELL_STARTS,
+  DEFAULT_24WELL_CENTERS,
+  safeInt,
+  safeFloat,
+  parseEcalcFloat,
+  getWellCenterMm,
+  isDotInsideWellMm,
+  resolveParamsDots,
+  countDotsOutsideWell,
+  validateDotsInsideWell,
+  computeGridDotsFromParams,
+  applyProgressiveYOffset,
+  computeCircleDots,
+  translateStartForWell,
+  validatePassSettings,
+  validatePrintParams,
+  validateCircleParams,
+  passSettingsMatch,
+  computeGridLayout,
+  defaultFileNameForParams,
+  defaultBulkFileName,
+  validateAngleOffsetValues,
+  buildCombinedGcode: coreBuildCombinedGcode,
+} = GcodeCore;
+
 const STEPS_PER_MM_ECALC = 10498.7;
-const WELL_PITCH_X_MM = 19.3;
-const WELL_PITCH_Y_MM = 19.3;
-const ROW_KEYS = ["A", "B", "C", "D"];
-const COL_KEYS = [1, 2, 3, 4, 5, 6];
-
-// New printer anchors provided by user.
-const A1_START = [37.55, 46.3];
-const A1_CENTER = [38.9, 47.8];
-
-function build24WellMap(a1X, a1Y) {
-  const map = {};
-  ROW_KEYS.forEach((rowKey, rIdx) => {
-    COL_KEYS.forEach((colKey, cIdx) => {
-      const wellKey = `${rowKey}${colKey}`;
-      map[wellKey] = [a1X + rIdx * WELL_PITCH_X_MM, a1Y + cIdx * WELL_PITCH_Y_MM];
-    });
-  });
-  return map;
-}
-
-const DEFAULT_24WELL_STARTS = build24WellMap(A1_START[0], A1_START[1]);
-const DEFAULT_24WELL_CENTERS = build24WellMap(A1_CENTER[0], A1_CENTER[1]);
 
 const el = {
   well: document.getElementById("well"),
@@ -69,6 +83,8 @@ const el = {
   print2Options: document.getElementById("print-2-options"),
   print2ModeFieldset: document.getElementById("print-2-mode-fieldset"),
   print2Controls: document.getElementById("print-2-controls"),
+  print2PatternFields: document.getElementById("print-2-pattern-fields"),
+  print2PassFields: document.getElementById("print-2-pass-fields"),
   p2startX: document.getElementById("p2-start-x"),
   p2startY: document.getElementById("p2-start-y"),
   p2dots: document.getElementById("p2-dots"),
@@ -79,6 +95,7 @@ const el = {
   p2lowerZ: document.getElementById("p2-lower-z"),
   p2upperZ: document.getElementById("p2-upper-z"),
   p2extrusionE: document.getElementById("p2-extrusion-e"),
+  p2syncPass: document.getElementById("p2-sync-pass"),
   p2snap: document.getElementById("p2-snap"),
   savePrint1: document.getElementById("save-print-1"),
   savePrint2: document.getElementById("save-print-2"),
@@ -115,18 +132,36 @@ const el = {
 const PRINT1_DOT_COLOR = "#2196F3";
 const PRINT2_DOT_COLOR = "#9333EA";
 const OVERLAP_DOT_COLOR = "#E65100";
-const OVERLAP_TOLERANCE_MM = 0.02;
+const OUTSIDE_WELL_DOT_COLOR = "#DC2626";
 const PRINT1_TOOLPATH_COLOR = "rgba(156, 163, 175, 0.6)";
 const PRINT2_TOOLPATH_COLOR = "rgba(147, 51, 234, 0.55)";
 
 let dotPositions = [];
 let bulkDetailDotPositions = [];
 let ecalcOpen = true;
+let print2PassCustomized = false;
 
 function setPreviewMeta(text) {
-  if (el.previewMeta) el.previewMeta.textContent = text;
-  if (el.previewMetaSingle) el.previewMetaSingle.textContent = text;
-  if (el.previewMetaCircle) el.previewMetaCircle.textContent = text;
+  const passWarn = getActivePassPreviewWarning();
+  const full = passWarn ? `${text} | ${passWarn}` : text;
+  if (el.previewMeta) el.previewMeta.textContent = full;
+  if (el.previewMetaSingle) el.previewMetaSingle.textContent = full;
+  if (el.previewMetaCircle) el.previewMetaCircle.textContent = full;
+}
+
+function getActivePassPreviewWarning() {
+  if (validatePassSettings(print1FieldTarget())) {
+    return "Pass settings incomplete";
+  }
+  if (isSecondPassEnabled()) {
+    if (validatePassSettings(print2FieldTarget())) {
+      return "Print 2 pass settings incomplete";
+    }
+    if (el.p2AngleOffset.checked && validateAngleOffset()) {
+      return "Y offset settings incomplete";
+    }
+  }
+  return "";
 }
 
 function getBulkDetailWellKey() {
@@ -162,18 +197,15 @@ function syncBulkDetailWellOptions() {
   }
 }
 
-function safeInt(v) {
-  const n = Number.parseInt(v, 10);
-  return Number.isFinite(n) ? n : 0;
+function syncWellNumberFromDropdown() {
+  if (el.wellNumber && el.well) {
+    el.wellNumber.value = el.well.value;
+  }
 }
 
-function safeFloat(v) {
-  const n = Number.parseFloat(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function getWellCenterMm(wellKey) {
-  return DEFAULT_24WELL_CENTERS[wellKey] || DEFAULT_24WELL_CENTERS.A1;
+function outsideWellMetaNote(positions) {
+  const count = positions.filter((dot) => dot.outsideWell).length;
+  return count > 0 ? ` | ${count} outside well` : "";
 }
 
 function startPositionForCenterDotAtWellCenter(wellKey, numDots, dotsPerRow, spacingX, spacingY) {
@@ -186,15 +218,15 @@ function startPositionForCenterDotAtWellCenter(wellKey, numDots, dotsPerRow, spa
 }
 
 function applyWellDefaults(target, wellKey) {
-  target.dots.value = "30";
   target.perRow.value = "10";
   target.rows.value = "3";
+  syncGridDotsFromLayout(target.dots, target.perRow, target.rows);
   target.spacingX.value = "0.3";
   target.spacingY.value = "1.5";
   target.lowerZ.value = DEFAULT_LOWER_Z_OFFSET.toFixed(2);
   target.upperZ.value = DEFAULT_UPPER_Z_OFFSET.toFixed(2);
-  if (target.wellNumber) target.wellNumber.value = wellKey;
   target.extrusionE.value = DEFAULT_EXTRUSION.toFixed(4);
+  syncWellNumberFromDropdown();
 
   const [cx, cy] = DEFAULT_24WELL_STARTS[wellKey] || DEFAULT_24WELL_STARTS.A1;
   target.startX.value = cx.toFixed(2);
@@ -213,7 +245,6 @@ function print1FieldTarget() {
     spacingY: el.spacingY,
     lowerZ: el.lowerZ,
     upperZ: el.upperZ,
-    wellNumber: el.wellNumber,
     extrusionE: el.extrusionE,
   };
 }
@@ -239,6 +270,31 @@ function setDefaultsFromCurrentWell() {
 
 function setPrint2Defaults() {
   applyWellDefaults(print2FieldTarget(), el.well.value);
+  resetPrint2PassCustomized();
+  syncPrint2PassFromPrint1();
+}
+
+function resetPrint2PassCustomized() {
+  print2PassCustomized = false;
+}
+
+function markPrint2PassCustomized() {
+  print2PassCustomized = true;
+}
+
+function syncPrint2PassFromPrint1() {
+  el.p2lowerZ.value = el.lowerZ.value;
+  el.p2upperZ.value = el.upperZ.value;
+  el.p2extrusionE.value = el.extrusionE.value;
+}
+
+function applyPrint2PassSettings(params) {
+  const p2 = print2FieldTarget();
+  return GcodeCore.applyPrint2PassSettings(params, {
+    lowerZ: p2.lowerZ.value,
+    upperZ: p2.upperZ.value,
+    extrusionE: p2.extrusionE.value,
+  });
 }
 
 function getPrint2Mode() {
@@ -257,7 +313,7 @@ function collectPrintParams(fields) {
     spacingY: safeFloat(fields.spacingY.value),
     lowerZ: safeFloat(fields.lowerZ.value),
     upperZ: safeFloat(fields.upperZ.value),
-    wellNumber: fields.wellNumber.value.trim(),
+    wellNumber: fields.well.value,
     extrusionE: safeFloat(fields.extrusionE.value),
     annotate: el.annotate.checked,
   };
@@ -295,38 +351,6 @@ function getAngleOffsetSettings() {
   };
 }
 
-function computeGridDotsFromParams(params) {
-  const dots = [];
-  const rows = params.perRow > 0 ? Math.ceil(params.numDots / params.perRow) : 0;
-  let idx = 0;
-  for (let rr = 0; rr < rows; rr += 1) {
-    for (let cc = 0; cc < params.perRow; cc += 1) {
-      if (idx >= params.numDots) break;
-      dots.push({
-        absX: params.startX + cc * params.spacingX,
-        absY: params.startY + rr * params.spacingY,
-      });
-      idx += 1;
-    }
-  }
-  return dots;
-}
-
-function applyProgressiveYOffset(baseDots, print1Dots, perRow, minDist, maxDist, sign = 1) {
-  if (!baseDots.length) return [];
-
-  return baseDots.map((dot, i) => {
-    const col = perRow > 0 ? i % perRow : 0;
-    const t = perRow > 1 ? col / (perRow - 1) : 0;
-    const dist = minDist + (maxDist - minDist) * t;
-    const ref = print1Dots[Math.min(i, print1Dots.length - 1)] || dot;
-    return {
-      absX: ref.absX,
-      absY: ref.absY + dist * sign,
-    };
-  });
-}
-
 function buildAngledPrint2Dots(print2Params) {
   const print1 = collectPrint1Params();
   const print1Dots = computeGridDotsFromParams(print1);
@@ -354,20 +378,6 @@ function isCirclePrintEnabled() {
   return getAppMode() === "circle-print";
 }
 
-function computeCircleDots(centerX, centerY, radiusMm, numDots, startAngleDeg = 0) {
-  const dots = [];
-  if (numDots <= 0 || radiusMm < 0) return dots;
-  const startRad = (startAngleDeg * Math.PI) / 180;
-  for (let i = 0; i < numDots; i += 1) {
-    const theta = startRad + ((2 * Math.PI * i) / numDots);
-    dots.push({
-      absX: centerX + radiusMm * Math.cos(theta),
-      absY: centerY + radiusMm * Math.sin(theta),
-    });
-  }
-  return dots;
-}
-
 function applyCircleDefaults(wellKey) {
   const [cx, cy] = getWellCenterMm(wellKey);
   if (el.circleCenterX) el.circleCenterX.value = cx.toFixed(2);
@@ -375,7 +385,7 @@ function applyCircleDefaults(wellKey) {
   if (el.circleDots) el.circleDots.value = "12";
   if (el.circleRadius) el.circleRadius.value = "3";
   if (el.circleStartAngle) el.circleStartAngle.value = "0";
-  if (el.wellNumber) el.wellNumber.value = wellKey;
+  syncWellNumberFromDropdown();
   el.lowerZ.value = DEFAULT_LOWER_Z_OFFSET.toFixed(2);
   el.upperZ.value = DEFAULT_UPPER_Z_OFFSET.toFixed(2);
   el.extrusionE.value = DEFAULT_EXTRUSION.toFixed(4);
@@ -391,7 +401,7 @@ function collectCircleParams() {
   const customDots = computeCircleDots(centerX, centerY, radiusMm, numDots, startAngleDeg);
   return {
     well,
-    wellNumber: el.wellNumber.value.trim() || well,
+    wellNumber: well,
     centerX,
     centerY,
     numDots,
@@ -403,23 +413,6 @@ function collectCircleParams() {
     annotate: el.annotate.checked,
     customDots,
   };
-}
-
-function validateCircleParams(params) {
-  if (!params.wellNumber) return "Error: Well number required.";
-  if (params.numDots <= 0) return "Error: Number of dots must be > 0.";
-  if (params.radiusMm < 0) return "Error: Circle radius cannot be negative.";
-  if (params.lowerZ < 0 || params.upperZ < 0) {
-    return "Error: Z offsets cannot be negative.";
-  }
-  if (params.extrusionE <= 0) {
-    return "Error: Extrusion per dot (E) must be greater than 0.";
-  }
-  const maxR = WELL_DIAM_MM / 2;
-  if (params.radiusMm > maxR) {
-    return `Error: Radius exceeds well (${maxR.toFixed(2)} mm max).`;
-  }
-  return null;
 }
 
 function circleParamsToGcode(params) {
@@ -441,14 +434,6 @@ function circleParamsToGcode(params) {
 
 function defaultCircleFileName(params) {
   return `well_${params.wellNumber}_circle_R${params.radiusMm.toFixed(2)}_Z${params.lowerZ.toFixed(2)}.txt`;
-}
-
-function translateStartForWell(refWell, targetWell, refStartX, refStartY) {
-  const refDefault = DEFAULT_24WELL_STARTS[refWell] || DEFAULT_24WELL_STARTS.A1;
-  const targetDefault = DEFAULT_24WELL_STARTS[targetWell] || DEFAULT_24WELL_STARTS.A1;
-  const deltaX = refStartX - refDefault[0];
-  const deltaY = refStartY - refDefault[1];
-  return [targetDefault[0] + deltaX, targetDefault[1] + deltaY];
 }
 
 function collectBulkParamsForWell(wellKey) {
@@ -537,20 +522,10 @@ function buildBulkCombinedGcode(wells) {
     .join("\n\n");
 }
 
-function defaultBulkFileName(wells, lowerZ) {
-  if (wells.length === 1) {
-    return `well_${wells[0]}_Z${lowerZ.toFixed(2)}.txt`;
-  }
-  const label = wells.length <= 6
-    ? wells.join("-")
-    : `${wells.length}wells`;
-  return `bulk_${label}_Z${lowerZ.toFixed(2)}.txt`;
-}
-
 function setAppMode(tabId) {
   document.body.dataset.appMode = tabId;
-  if (tabId === "circle-print") {
-    applyCircleDefaults(el.well.value);
+  if (tabId === "multi-print" && !print2PassCustomized) {
+    syncPrint2PassFromPrint1();
   }
   updateModeUi();
   drawPreview();
@@ -560,12 +535,17 @@ function collectPrint2Params() {
   if (!isSecondPassEnabled()) return null;
 
   const offsetOn = getAngleOffsetSettings().enabled;
+  const mode = getPrint2Mode();
   let params;
-  if (offsetOn || getPrint2Mode() === "same") {
+  if (offsetOn) {
+    params = collectPrint1Params();
+  } else if (mode === "same") {
     params = collectPrint1Params();
   } else {
     params = collectPrint2PatternParams();
   }
+
+  params = applyPrint2PassSettings(params);
 
   if (offsetOn) {
     const customDots = buildAngledPrint2Dots(params);
@@ -578,30 +558,12 @@ function collectPrint2Params() {
   return params;
 }
 
-function validatePrintParams(params) {
-  if (!params.wellNumber) return "Error: Well number required.";
-  if (params.numDots <= 0 || params.perRow <= 0) {
-    return "Error: Dots and Dots Per Row must be > 0.";
-  }
-  if (params.lowerZ < 0 || params.upperZ < 0) {
-    return "Error: Z offsets cannot be negative.";
-  }
-  if (params.extrusionE <= 0) {
-    return "Error: Extrusion per dot (E) must be greater than 0.";
-  }
-  return null;
-}
-
 function validateAngleOffset() {
   if (!isSecondPassEnabled() || !el.p2AngleOffset.checked) return null;
-  const angle = getAngleOffsetSettings();
-  if (angle.min < 0 || angle.max < 0) {
-    return "Error: Y offset distances cannot be negative.";
-  }
-  if (angle.min > angle.max) {
-    return "Error: Min Y offset must be ≤ max Y offset.";
-  }
-  return null;
+  return validateAngleOffsetValues(
+    parseEcalcFloat(el.p2OffsetMin.value),
+    parseEcalcFloat(el.p2OffsetMax.value)
+  );
 }
 
 function paramsToGcode(params) {
@@ -622,15 +584,7 @@ function paramsToGcode(params) {
 }
 
 function buildCombinedGcode(print1, print2, sameMode) {
-  const gcode1 = paramsToGcode(print1);
-  const repeatGcode = sameMode && !print2.customDots;
-  const gcode2 = repeatGcode ? gcode1 : paramsToGcode(print2);
-  const sameNote = repeatGcode ? "; (same pattern as Print 1)\n" : "";
-  return `${gcode1}\n\n; === Print 2 (second pass, same well ${print1.wellNumber}) ===\n${sameNote}\n${gcode2}`;
-}
-
-function defaultFileNameForParams(params, suffix) {
-  return `well_${params.wellNumber}_Z${params.lowerZ.toFixed(2)}${suffix}.txt`;
+  return coreBuildCombinedGcode(print1, print2, sameMode, paramsToGcode);
 }
 
 function isPrint2OffsetMode() {
@@ -643,13 +597,18 @@ function updateModeUi() {
   const circle = isCirclePrintEnabled();
   const offsetOn = isPrint2OffsetMode();
 
+  const differentMode = getPrint2Mode() === "different";
+
   el.p2AngleControls.hidden = !multi || !el.p2AngleOffset.checked;
   if (el.print1PatternNote) el.print1PatternNote.hidden = !multi;
   if (el.p2OffsetUsesPrint1Note) el.p2OffsetUsesPrint1Note.hidden = !offsetOn;
-  el.print2Controls.hidden = !multi || offsetOn || getPrint2Mode() !== "different";
-
-  const differentRadio = document.querySelector('input[name="print-2-mode"][value="different"]');
-  if (differentRadio) differentRadio.disabled = offsetOn;
+  el.print2Controls.hidden = !multi || !differentMode;
+  if (el.print2PatternFields) {
+    el.print2PatternFields.hidden = !multi || !differentMode || offsetOn;
+  }
+  if (el.print2PassFields) {
+    el.print2PassFields.hidden = !multi;
+  }
 
   el.save.hidden = multi || bulk || circle;
   el.savePrint1.hidden = !multi;
@@ -687,10 +646,18 @@ function getPreviewView() {
   return el.previewTarget.value || "both";
 }
 
-function syncPrint2Rows() {
-  const dots = safeInt(el.p2dots.value);
-  const perRow = safeInt(el.p2perRow.value);
-  if (dots > 0 && perRow > 0) el.p2rows.value = String(Math.ceil(dots / perRow));
+function syncGridDotsFromLayout(dotsEl, perRowEl, rowsEl) {
+  const { rows, perRow, dots } = computeGridLayout(rowsEl.value, perRowEl.value);
+  rowsEl.value = String(rows);
+  perRowEl.value = String(perRow);
+  dotsEl.value = String(dots);
+}
+
+function onPrint1PassInput() {
+  if (isSecondPassEnabled() && !print2PassCustomized) {
+    syncPrint2PassFromPrint1();
+  }
+  drawPreview();
 }
 
 function appendDotSequence(lines, dotCoords, params, annotate, zApproach, zRetract, zSafe) {
@@ -984,7 +951,7 @@ function partitionOverlappingDots(positions1, positions2) {
   return { only1, only2, overlaps };
 }
 
-function drawPreviewLegend(ctx, cw, ch, { showPrint2 = false, showOverlap = false } = {}) {
+function drawPreviewLegend(ctx, cw, ch, { showPrint2 = false, showOverlap = false, showOutside = false } = {}) {
   const margin = 12;
   const rowHeight = 16;
   const lineLen = 22;
@@ -1001,6 +968,9 @@ function drawPreviewLegend(ctx, cw, ch, { showPrint2 = false, showOverlap = fals
   }
   if (showOverlap) {
     rows.push({ type: "dot", label: "Multi-point site", color: OVERLAP_DOT_COLOR });
+  }
+  if (showOutside) {
+    rows.push({ type: "dot", label: "Outside well", color: OUTSIDE_WELL_DOT_COLOR });
   }
 
   ctx.save();
@@ -1053,7 +1023,7 @@ function wellToCanvas(wellKey, refCx, refCy, pxCenterX, pxCenterY, scale) {
 
 function computeDotPositions(cfg, refCx, refCy, pxCenterX, pxCenterY, scale, rPx, dotR) {
   const positions = [];
-  const wellCenter = wellToCanvas(cfg.well, refCx, refCy, pxCenterX, pxCenterY, scale);
+  const wellKey = cfg.well;
   const sourceDots = cfg.customDots && cfg.customDots.length
     ? cfg.customDots
     : computeGridDotsFromParams(cfg);
@@ -1061,9 +1031,8 @@ function computeDotPositions(cfg, refCx, refCy, pxCenterX, pxCenterY, scale, rPx
   sourceDots.forEach((dot) => {
     const px = pxCenterX + (dot.absX - refCx) * scale;
     const py = pxCenterY - (dot.absY - refCy) * scale;
-    if (Math.hypot(px - wellCenter.px, py - wellCenter.py) < (rPx - dotR)) {
-      positions.push({ absX: dot.absX, absY: dot.absY, px, py });
-    }
+    const outsideWell = !isDotInsideWellMm(dot.absX, dot.absY, wellKey);
+    positions.push({ absX: dot.absX, absY: dot.absY, px, py, outsideWell });
   });
 
   const rows = cfg.perRow > 0 ? Math.ceil(cfg.numDots / cfg.perRow) : 0;
@@ -1080,11 +1049,17 @@ function drawWellOutline(ctx, wellKey, refCx, refCy, pxCenterX, pxCenterY, scale
 }
 
 function drawPrintDots(ctx, positions, color, dotR) {
-  ctx.fillStyle = color;
-  positions.forEach(({ px, py }) => {
+  positions.forEach((dot) => {
+    const { px, py, outsideWell } = dot;
+    ctx.fillStyle = outsideWell ? OUTSIDE_WELL_DOT_COLOR : color;
     ctx.beginPath();
     ctx.arc(px, py, dotR, 0, Math.PI * 2);
     ctx.fill();
+    if (outsideWell) {
+      ctx.strokeStyle = "#991B1B";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
   });
 }
 
@@ -1146,14 +1121,13 @@ function drawXYHomeIndicator(ctx, cornerX, cornerY, { scale = 1 } = {}) {
   ctx.restore();
 }
 
-function dotsFromAbsCoords(customDots, wellKey, refCx, refCy, pxCenterX, pxCenterY, scale, rPx, dotR) {
+function dotsFromAbsCoords(customDots, wellKey, refCx, refCy, pxCenterX, pxCenterY, scale) {
   const positions = [];
   customDots.forEach((dot) => {
     const px = pxCenterX + (dot.absX - refCx) * scale;
     const py = pxCenterY - (dot.absY - refCy) * scale;
-    if (Math.hypot(px - pxCenterX, py - pxCenterY) < (rPx - dotR)) {
-      positions.push({ absX: dot.absX, absY: dot.absY, px, py });
-    }
+    const outsideWell = !isDotInsideWellMm(dot.absX, dot.absY, wellKey);
+    positions.push({ absX: dot.absX, absY: dot.absY, px, py, outsideWell });
   });
   return positions;
 }
@@ -1274,7 +1248,11 @@ function drawWellDetailPreview(canvasEl, params, positionsOut) {
   const homeWell = wellToCanvas(params.well, refCx, refCy, pxCenterX, pxCenterY, scale);
   const homeScale = Math.min(1, canvasEl.width / 560);
   drawXYHomeIndicator(detailCtx, homeWell.px - rPx, homeWell.py + rPx, { scale: homeScale });
-  drawPreviewLegend(detailCtx, cw, ch, { showPrint2: false, showOverlap: false });
+  drawPreviewLegend(detailCtx, cw, ch, {
+    showPrint2: false,
+    showOverlap: false,
+    showOutside: printData.positions.some((dot) => dot.outsideWell),
+  });
 
   return printData;
 }
@@ -1309,7 +1287,7 @@ function drawBulkDetailPreview() {
       `Well ${wellKey}`,
       `Start X ${params.startX.toFixed(2)} Y ${params.startY.toFixed(2)}`,
       `grid ${printData.gridWmm.toFixed(2)} × ${printData.gridHmm.toFixed(2)} mm`,
-      `Ø ${WELL_DIAM_MM.toFixed(1)} mm`,
+      `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideWellMetaNote(printData.positions)}`,
     ].join(" | ");
   }
 }
@@ -1371,14 +1349,17 @@ function drawBulkPreview() {
     const dots = computeGridDotsFromParams(params);
     dots.forEach((dot) => {
       const { px, py } = plateMmToCanvas(dot.absX, dot.absY, bounds, cw, ch, margin);
-      const [cx, cy] = getWellCenterMm(wellKey);
-      const { px: wpx, py: wpy } = plateMmToCanvas(cx, cy, bounds, cw, ch, margin);
-      if (Math.hypot(px - wpx, py - wpy) >= rPx - dotR) return;
-
-      ctx.fillStyle = wellKey === refParams.well ? PRINT1_DOT_COLOR : "#60a5fa";
+      const outsideWell = !isDotInsideWellMm(dot.absX, dot.absY, wellKey);
+      const insideColor = wellKey === refParams.well ? PRINT1_DOT_COLOR : "#60a5fa";
+      ctx.fillStyle = outsideWell ? OUTSIDE_WELL_DOT_COLOR : insideColor;
       ctx.beginPath();
       ctx.arc(px, py, dotR, 0, Math.PI * 2);
       ctx.fill();
+      if (outsideWell) {
+        ctx.strokeStyle = "#991B1B";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
       dotPositions.push({
         absX: dot.absX,
         absY: dot.absY,
@@ -1386,15 +1367,18 @@ function drawBulkPreview() {
         py,
         wellKey,
         printNum: 1,
+        outsideWell,
       });
     });
   });
 
+  const bulkOutsideCount = dotPositions.filter((dot) => dot.outsideWell).length;
+  const bulkOutsideNote = bulkOutsideCount > 0 ? ` | ${bulkOutsideCount} outside well` : "";
   setPreviewMeta([
     `Bulk: ${selected.length} well${selected.length === 1 ? "" : "s"}`,
     `Ref ${refParams.well}`,
     `grid ${Math.max(0, (refParams.perRow - 1) * refParams.spacingX).toFixed(2)} × ${Math.max(0, (Math.ceil(refParams.numDots / refParams.perRow) - 1) * refParams.spacingY).toFixed(2)} mm`,
-    `Ø ${WELL_DIAM_MM.toFixed(1)} mm`,
+    `Ø ${WELL_DIAM_MM.toFixed(1)} mm${bulkOutsideNote}`,
   ].join(" | "));
   drawBulkDetailPreview();
 }
@@ -1424,9 +1408,7 @@ function drawCirclePreview() {
     refCy,
     pxCenterX,
     pxCenterY,
-    scale,
-    rPx,
-    dotR
+    scale
   );
 
   ctx.clearRect(0, 0, cw, ch);
@@ -1464,14 +1446,16 @@ function drawCirclePreview() {
 
   const homeWell = wellToCanvas(params.well, refCx, refCy, pxCenterX, pxCenterY, scale);
   drawXYHomeIndicator(ctx, homeWell.px - rPx, homeWell.py + rPx);
-  drawPreviewLegend(ctx, cw, ch, { showPrint2: false, showOverlap: false });
+  drawPreviewLegend(ctx, cw, ch, {
+    showPrint2: false,
+    showOverlap: false,
+    showOutside: positions.some((dot) => dot.outsideWell),
+  });
 
-  const outside = params.numDots - positions.length;
-  const outsideNote = outside > 0 ? ` | ${outside} outside well` : "";
   setPreviewMeta([
     `Well ${params.well} | Circle R ${params.radiusMm.toFixed(2)} mm`,
     `${positions.length} dots @ ${params.startAngleDeg.toFixed(0)}° start`,
-    `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`,
+    `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideWellMetaNote(positions)}`,
   ].join(" | "));
 }
 
@@ -1580,9 +1564,16 @@ function drawPreview() {
 
   const homeWell = wellToCanvas(print1.well, refCx, refCy, pxCenterX, pxCenterY, scale);
   drawXYHomeIndicator(ctx, homeWell.px - rPx, homeWell.py + rPx);
+
+  const legendPositions = [];
+  if (showPrint1Layer) legendPositions.push(...print1Data.positions);
+  if (showPrint2Layer && print2Data) legendPositions.push(...print2Data.positions);
+  const outsideNote = outsideWellMetaNote(legendPositions);
+
   drawPreviewLegend(ctx, cw, ch, {
     showPrint2,
     showOverlap: showBothLayers && overlapSplit && overlapSplit.overlaps.length > 0,
+    showOutside: legendPositions.some((dot) => dot.outsideWell),
   });
 
   if (showPrint2 && print2 && print2Data) {
@@ -1591,26 +1582,29 @@ function drawPreview() {
       setPreviewMeta([
         `${wellLabel} | Pass 1 grid ${print1Data.gridWmm.toFixed(2)} × ${print1Data.gridHmm.toFixed(2)} mm`,
         `Pass 2 grid ${print2Data.gridWmm.toFixed(2)} × ${print2Data.gridHmm.toFixed(2)} mm`,
-        `Ø ${WELL_DIAM_MM.toFixed(1)} mm`,
+        `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`,
       ].join(" | "));
     } else if (view === "2") {
-      setPreviewMeta(`${wellLabel} | Pass 2 grid ${print2Data.gridWmm.toFixed(2)} × ${print2Data.gridHmm.toFixed(2)} mm | Ø ${WELL_DIAM_MM.toFixed(1)} mm`);
+      setPreviewMeta(`${wellLabel} | Pass 2 grid ${print2Data.gridWmm.toFixed(2)} × ${print2Data.gridHmm.toFixed(2)} mm | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`);
     } else {
-      setPreviewMeta(`${wellLabel} | Pass 1 grid ${print1Data.gridWmm.toFixed(2)} × ${print1Data.gridHmm.toFixed(2)} mm | Ø ${WELL_DIAM_MM.toFixed(1)} mm`);
+      setPreviewMeta(`${wellLabel} | Pass 1 grid ${print1Data.gridWmm.toFixed(2)} × ${print1Data.gridHmm.toFixed(2)} mm | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`);
     }
   } else {
-    setPreviewMeta(`Well Ø ${WELL_DIAM_MM.toFixed(1)} mm | Grid ${print1Data.gridWmm.toFixed(2)} x ${print1Data.gridHmm.toFixed(2)} mm`);
+    setPreviewMeta(`Well Ø ${WELL_DIAM_MM.toFixed(1)} mm | Grid ${print1Data.gridWmm.toFixed(2)} x ${print1Data.gridHmm.toFixed(2)} mm${outsideNote}`);
   }
 }
 
-function syncRowsAndPreview() {
+function onPrint1GridLayoutInput() {
   if (isCirclePrintEnabled()) {
     drawPreview();
     return;
   }
-  const dots = safeInt(el.dots.value);
-  const perRow = safeInt(el.perRow.value);
-  if (dots > 0 && perRow > 0) el.rows.value = String(Math.ceil(dots / perRow));
+  syncGridDotsFromLayout(el.dots, el.perRow, el.rows);
+  drawPreview();
+}
+
+function onPrint2GridLayoutInput() {
+  syncGridDotsFromLayout(el.p2dots, el.p2perRow, el.p2rows);
   drawPreview();
 }
 
@@ -1623,17 +1617,12 @@ function setEcalcOutputEmpty() {
 }
 
 function updateEcalc() {
-  const cells = safeFloat(el.ecalcCells.value);
-  const volUl = safeFloat(el.ecalcVolUl.value);
-  const needleRatio = safeFloat(el.ecalcNeedleRatio.value);
-  const tipMm = safeFloat(el.ecalcTipMm.value);
+  const cells = parseEcalcFloat(el.ecalcCells.value);
+  const volUl = parseEcalcFloat(el.ecalcVolUl.value);
+  const needleRatio = parseEcalcFloat(el.ecalcNeedleRatio.value);
+  const tipMm = parseEcalcFloat(el.ecalcTipMm.value);
 
-  if (
-    Number.isNaN(cells) ||
-    Number.isNaN(volUl) ||
-    Number.isNaN(needleRatio) ||
-    Number.isNaN(tipMm)
-  ) {
+  if (cells === null || volUl === null || needleRatio === null || tipMm === null) {
     setEcalcOutputEmpty();
     return;
   }
@@ -1662,10 +1651,21 @@ function updateEcalc() {
 
 async function saveGcodeFile(contents, defaultFileName) {
   const result = await window.gcodeApi.saveGcode({ defaultFileName, contents });
-  el.saveStatus.textContent = result.cancelled ? "Save cancelled." : `Saved: ${result.path}`;
+  if (result.cancelled) {
+    el.saveStatus.textContent = "Save cancelled.";
+  } else if (result.error) {
+    el.saveStatus.textContent = `Save failed: ${result.message}`;
+  } else {
+    el.saveStatus.textContent = `Saved: ${result.path}`;
+  }
 }
 
 async function saveGcode() {
+  const passErr = validatePassSettings(print1FieldTarget());
+  if (passErr) {
+    el.saveStatus.textContent = passErr;
+    return;
+  }
   const print1 = collectPrint1Params();
   const err = validatePrintParams(print1);
   if (err) {
@@ -1676,6 +1676,11 @@ async function saveGcode() {
 }
 
 async function savePrint1Gcode() {
+  const passErr = validatePassSettings(print1FieldTarget());
+  if (passErr) {
+    el.saveStatus.textContent = passErr;
+    return;
+  }
   const print1 = collectPrint1Params();
   const err = validatePrintParams(print1);
   if (err) {
@@ -1686,6 +1691,11 @@ async function savePrint1Gcode() {
 }
 
 async function savePrint2Gcode() {
+  const passErr = validatePassSettings(print2FieldTarget());
+  if (passErr) {
+    el.saveStatus.textContent = passErr;
+    return;
+  }
   const print2 = collectPrint2Params();
   const err2 = validatePrintParams(print2);
   if (err2) {
@@ -1704,6 +1714,16 @@ async function savePrint2Gcode() {
 }
 
 async function saveCombinedGcode() {
+  const pass1Err = validatePassSettings(print1FieldTarget());
+  if (pass1Err) {
+    el.saveStatus.textContent = pass1Err;
+    return;
+  }
+  const pass2Err = validatePassSettings(print2FieldTarget());
+  if (pass2Err) {
+    el.saveStatus.textContent = pass2Err;
+    return;
+  }
   const print1 = collectPrint1Params();
   const print2 = collectPrint2Params();
   const err1 = validatePrintParams(print1);
@@ -1729,12 +1749,19 @@ async function saveCombinedGcode() {
 }
 
 function validateBulkExport() {
+  const passErr = validatePassSettings(print1FieldTarget());
+  if (passErr) return { error: passErr };
   const ref = collectPrint1Params();
   const err = validatePrintParams(ref);
   if (err) return { error: err };
   const wells = getSelectedBulkWells();
   if (!wells.length) {
     return { error: "Error: Select at least one well to print." };
+  }
+  for (const wellKey of wells) {
+    const params = collectBulkParamsForWell(wellKey);
+    const wellErr = validateDotsInsideWell(params, wellKey);
+    if (wellErr) return { error: wellErr };
   }
   return { ref, wells };
 }
@@ -1753,6 +1780,11 @@ async function saveBulkGcodeCombined() {
 }
 
 async function saveCircleGcode() {
+  const passErr = validatePassSettings(print1FieldTarget());
+  if (passErr) {
+    el.saveStatus.textContent = passErr;
+    return;
+  }
   const params = collectCircleParams();
   const err = validateCircleParams(params);
   if (err) {
@@ -1782,6 +1814,13 @@ async function saveBulkGcodeIndividual() {
     el.saveStatus.textContent = "Save cancelled.";
     return;
   }
+  if (result.error) {
+    const partial = result.paths?.length
+      ? ` (${result.paths.length} file${result.paths.length === 1 ? "" : "s"} written before failure)`
+      : "";
+    el.saveStatus.textContent = `Save failed: ${result.message}${partial}`;
+    return;
+  }
   const count = result.paths.length;
   const noun = count === 1 ? "file" : "files";
   el.saveStatus.textContent = `Saved ${count} ${noun} to ${result.dir}`;
@@ -1795,6 +1834,7 @@ function populateWells() {
     el.well.appendChild(option);
   });
   el.well.value = "A1";
+  syncWellNumberFromDropdown();
 }
 
 function buildBulkWellGrid() {
@@ -1847,12 +1887,6 @@ function initCirclePrint() {
     if (input) input.addEventListener("input", drawPreview);
   });
 
-  [el.lowerZ, el.upperZ, el.extrusionE].forEach((input) => {
-    input.addEventListener("input", () => {
-      if (isCirclePrintEnabled()) drawPreview();
-    });
-  });
-
   if (el.saveCircle) {
     el.saveCircle.addEventListener("click", saveCircleGcode);
   }
@@ -1890,10 +1924,6 @@ function initMultiPrint() {
   el.previewTarget.addEventListener("change", drawPreview);
 
   el.p2AngleOffset.addEventListener("change", () => {
-    if (el.p2AngleOffset.checked) {
-      const sameRadio = document.querySelector('input[name="print-2-mode"][value="same"]');
-      if (sameRadio) sameRadio.checked = true;
-    }
     updateModeUi();
     drawPreview();
   });
@@ -1915,16 +1945,27 @@ function initMultiPrint() {
     drawPreview();
   });
 
-  [el.p2dots, el.p2perRow, el.p2spacingX, el.p2spacingY, el.p2startX, el.p2startY].forEach((input) => {
+  [el.p2perRow, el.p2rows].forEach((input) => {
+    input.addEventListener("input", onPrint2GridLayoutInput);
+  });
+  [el.p2spacingX, el.p2spacingY, el.p2startX, el.p2startY].forEach((input) => {
+    input.addEventListener("input", drawPreview);
+  });
+
+  [el.p2lowerZ, el.p2upperZ, el.p2extrusionE].forEach((input) => {
     input.addEventListener("input", () => {
-      syncPrint2Rows();
+      markPrint2PassCustomized();
       drawPreview();
     });
   });
 
-  [el.p2lowerZ, el.p2upperZ, el.p2extrusionE].forEach((input) => {
-    input.addEventListener("input", drawPreview);
-  });
+  if (el.p2syncPass) {
+    el.p2syncPass.addEventListener("click", () => {
+      resetPrint2PassCustomized();
+      syncPrint2PassFromPrint1();
+      drawPreview();
+    });
+  }
 
   el.savePrint1.addEventListener("click", savePrint1Gcode);
   el.savePrint2.addEventListener("click", savePrint2Gcode);
@@ -1960,7 +2001,7 @@ updateEcalc();
 drawPreview();
 
 el.well.addEventListener("change", () => {
-  el.wellNumber.value = el.well.value;
+  syncWellNumberFromDropdown();
   if (isCirclePrintEnabled()) {
     applyCircleDefaults(el.well.value);
   } else {
@@ -2015,8 +2056,14 @@ el.ecalcToggle.addEventListener("click", () => {
   if (ecalcOpen) updateEcalc();
 });
 
-[el.dots, el.perRow, el.spacingX, el.spacingY, el.startX, el.startY].forEach((i) => {
-  i.addEventListener("input", syncRowsAndPreview);
+[el.perRow, el.rows].forEach((i) => {
+  i.addEventListener("input", onPrint1GridLayoutInput);
+});
+[el.spacingX, el.spacingY, el.startX, el.startY].forEach((i) => {
+  i.addEventListener("input", drawPreview);
+});
+[el.lowerZ, el.upperZ, el.extrusionE].forEach((i) => {
+  i.addEventListener("input", onPrint1PassInput);
 });
 [el.ecalcCells, el.ecalcVolUl, el.ecalcNeedleRatio, el.ecalcTipMm].forEach((i) => {
   i.addEventListener("input", updateEcalc);
@@ -2048,7 +2095,8 @@ function showDotCoordLabel(closest) {
     if (closest.wellKey) printLabel = `Well ${closest.wellKey} dot`;
     else if (closest.printNum === "both") printLabel = "Multi-point site";
     else if (closest.printNum) printLabel = `Print ${closest.printNum} dot`;
-    el.coordLabel.textContent = `${printLabel}: X = ${closest.absX.toFixed(3)} mm | Y = ${closest.absY.toFixed(3)} mm`;
+    const outsideNote = closest.outsideWell ? " | outside well" : "";
+    el.coordLabel.textContent = `${printLabel}: X = ${closest.absX.toFixed(3)} mm | Y = ${closest.absY.toFixed(3)} mm${outsideNote}`;
   } else {
     el.coordLabel.textContent = COORD_LABEL_IDLE;
   }

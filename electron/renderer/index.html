@@ -80,7 +80,7 @@
             <input id="start-y" type="number" step="0.01" />
 
             <label>Number of Dots</label>
-            <input id="dots" type="number" />
+            <input id="dots" type="number" readonly tabindex="-1" aria-readonly="true" title="Auto-calculated: Dots Per Row × Number of Rows" />
 
             <label>Dots Per Row</label>
             <input id="per-row" type="number" />
@@ -122,7 +122,7 @@
           <input id="upper-z" type="number" step="0.01" />
 
           <label id="well-number-label">Well Number</label>
-          <input id="well-number" type="text" />
+          <input id="well-number" type="text" readonly tabindex="-1" aria-readonly="true" />
 
           <label>Extrusion per dot (E)</label>
           <input id="extrusion-e" type="number" step="0.0001" />
@@ -193,32 +193,11 @@
                 </div>
               </div>
 
-              <div id="print-2-controls" class="print-2-controls" hidden>
-                <h3 class="print-2-pattern-heading">Print 2 pattern</h3>
-                <p class="note print-2-pattern-note">
-                  Separate Start X/Y, dots, and spacing for pass 2 (not used when Y offset is enabled).
+              <div id="print-2-pass-fields" class="print-2-pass-fields">
+                <h3 class="print-2-pass-heading">Print 2 pass settings</h3>
+                <p class="note print-2-pass-note">
+                  Lower Z, Upper Z, and E default to Print 1 values. Change here to apply only to pass 2.
                 </p>
-                <label>Start X (mm)</label>
-                <input id="p2-start-x" type="number" step="0.01" />
-
-                <label>Start Y (mm)</label>
-                <input id="p2-start-y" type="number" step="0.01" />
-
-                <label>Number of Dots</label>
-                <input id="p2-dots" type="number" />
-
-                <label>Dots Per Row</label>
-                <input id="p2-per-row" type="number" />
-
-                <label>Number of Rows</label>
-                <input id="p2-rows" type="number" />
-
-                <label>Dot Spacing X (mm)</label>
-                <input id="p2-spacing-x" type="number" step="0.01" />
-
-                <label>Dot Spacing Y (mm)</label>
-                <input id="p2-spacing-y" type="number" step="0.01" />
-
                 <label>Lower Z Offset (mm above bottom)</label>
                 <input id="p2-lower-z" type="number" step="0.01" />
 
@@ -228,7 +207,38 @@
                 <label>Extrusion per dot (E)</label>
                 <input id="p2-extrusion-e" type="number" step="0.0001" />
 
-                <button type="button" id="p2-snap">Snap to well center</button>
+                <button type="button" id="p2-sync-pass">Use Print 1 Z and E</button>
+              </div>
+
+              <div id="print-2-controls" class="print-2-controls" hidden>
+                <div id="print-2-pattern-fields" class="print-2-pattern-fields">
+                  <h3 class="print-2-pattern-heading">Print 2 pattern</h3>
+                  <p class="note print-2-pattern-note">
+                    Separate Start X/Y, dots, and spacing for pass 2.
+                  </p>
+                  <label>Start X (mm)</label>
+                  <input id="p2-start-x" type="number" step="0.01" />
+
+                  <label>Start Y (mm)</label>
+                  <input id="p2-start-y" type="number" step="0.01" />
+
+                <label>Number of Dots</label>
+                <input id="p2-dots" type="number" readonly tabindex="-1" aria-readonly="true" title="Auto-calculated: Dots Per Row × Number of Rows" />
+
+                  <label>Dots Per Row</label>
+                  <input id="p2-per-row" type="number" />
+
+                  <label>Number of Rows</label>
+                  <input id="p2-rows" type="number" />
+
+                  <label>Dot Spacing X (mm)</label>
+                  <input id="p2-spacing-x" type="number" step="0.01" />
+
+                  <label>Dot Spacing Y (mm)</label>
+                  <input id="p2-spacing-y" type="number" step="0.01" />
+
+                  <button type="button" id="p2-snap">Snap to well center</button>
+                </div>
               </div>
             </div>
           </div>
@@ -320,6 +330,7 @@
       </main>
     </div>
 
+    <script src="../shared/gcode-core.js"></script>
     <script src="./renderer.js"></script>
   </body>
 </html>
