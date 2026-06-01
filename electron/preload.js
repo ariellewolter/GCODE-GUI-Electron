@@ -17,28 +17,33 @@ function bridgeCoreExports(core) {
   return api;
 }
 
+function safeExpose(key, value) {
+  try {
+    contextBridge.exposeInMainWorld(key, value);
+  } catch (err) {
+    console.error(`preload: expose ${key} failed`, err);
+  }
+}
+
+// Expose script URL first (keys must not start with underscore in Electron).
+safeExpose("gcodeCoreScriptSrc", pathToFileURL(CORE_PATH).href);
+
 let coreLoadError = null;
 try {
   const core = require(CORE_PATH);
-  contextBridge.exposeInMainWorld("GcodeCore", bridgeCoreExports(core));
+  safeExpose("GcodeCore", bridgeCoreExports(core));
 } catch (err) {
   coreLoadError = err;
   console.error("preload: failed to load gcode-core", err);
 }
 
-contextBridge.exposeInMainWorld("__gcodeCoreScriptSrc", pathToFileURL(CORE_PATH).href);
 if (coreLoadError) {
-  contextBridge.exposeInMainWorld(
-    "GcodeCoreLoadError",
-    coreLoadError.stack || String(coreLoadError)
-  );
+  safeExpose("GcodeCoreLoadError", coreLoadError.stack || String(coreLoadError));
 }
 
-contextBridge.exposeInMainWorld("appInfo", {
-  name: "G-Code Generator",
-});
+safeExpose("appInfo", { name: "G-Code Generator" });
 
-contextBridge.exposeInMainWorld("gcodeApi", {
+safeExpose("gcodeApi", {
   saveGcode: (payload) => ipcRenderer.invoke("save-gcode", payload),
   saveGcodeFiles: (payload) => ipcRenderer.invoke("save-gcode-files", payload),
 });

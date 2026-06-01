@@ -24,20 +24,54 @@ function loadRendererScript() {
   document.body.appendChild(script);
 }
 
-function loadCoreFromFileUrl(onReady, onError) {
-  const src = window.__gcodeCoreScriptSrc;
-  if (!src) {
-    onError("Core script path was not provided by preload.");
+function coreScriptCandidates() {
+  const urls = [];
+  const add = (href) => {
+    if (href && !urls.includes(href)) urls.push(href);
+  };
+
+  add("./gcode-core.js");
+  try {
+    add(new URL("./gcode-core.js", window.location.href).href);
+    add(new URL("../shared/gcode-core.js", window.location.href).href);
+  } catch (_err) {
+    // ignore URL resolution errors
+  }
+  if (window.gcodeCoreScriptSrc) add(window.gcodeCoreScriptSrc);
+
+  return urls;
+}
+
+function loadCoreScript(onReady, onError) {
+  const candidates = coreScriptCandidates();
+  if (!candidates.length) {
+    onError("No gcode-core.js path available.");
     return;
   }
-  const script = document.createElement("script");
-  script.src = src;
-  script.onload = () => {
-    if (coreIsReady()) onReady();
-    else onError("gcode-core.js loaded but did not define GcodeCore.");
-  };
-  script.onerror = () => onError("Failed to load gcode-core.js from the app bundle.");
-  document.head.appendChild(script);
+
+  let index = 0;
+
+  function tryNext() {
+    if (index >= candidates.length) {
+      onError(
+        `Failed to load gcode-core.js (tried ${candidates.length} path(s)).`
+      );
+      return;
+    }
+
+    const src = candidates[index];
+    index += 1;
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = () => {
+      if (coreIsReady()) onReady();
+      else tryNext();
+    };
+    script.onerror = tryNext;
+    document.head.appendChild(script);
+  }
+
+  tryNext();
 }
 
 function startApp() {
@@ -50,8 +84,14 @@ function startApp() {
     return;
   }
 
-  loadCoreFromFileUrl(loadRendererScript, (message) => {
-    const detail = window.GcodeCoreLoadError || "";
+  loadCoreScript(loadRendererScript, (message) => {
+    const detail = [
+      window.GcodeCoreLoadError || "",
+      `location: ${window.location.href}`,
+      `tried: ${coreScriptCandidates().join("\n")}`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     showBootFailure(message, detail);
   });
 }
