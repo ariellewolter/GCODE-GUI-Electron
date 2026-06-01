@@ -1,4 +1,18 @@
-/* global GcodeCore */
+const GcodeCore = window.GcodeCore;
+
+function showFatalStartupError(message) {
+  const panel = document.createElement("div");
+  panel.id = "startup-error";
+  panel.style.cssText = "margin:16px;padding:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;";
+  panel.innerHTML = `<strong>App failed to start.</strong><p style="margin:8px 0 0">${message}</p><p style="margin:8px 0 0">Try reinstalling from the latest release zip, or run from source with <code>npm run electron</code>.</p>`;
+  document.body.prepend(panel);
+}
+
+if (!GcodeCore) {
+  showFatalStartupError("Core module (GcodeCore) did not load. Preview, defaults, and tabs cannot run.");
+  throw new Error("GcodeCore is not available");
+}
+
 const {
   WELL_BOTTOM_Z,
   DEFAULT_LOWER_Z_OFFSET,
@@ -2388,22 +2402,32 @@ function initCirclePrint() {
   }
 }
 
+function bindClick(node, handler) {
+  if (node) node.addEventListener("click", handler);
+}
+
+function bindInput(node, handler) {
+  if (node) node.addEventListener("input", handler);
+}
+
+function bindChange(node, handler) {
+  if (node) node.addEventListener("change", handler);
+}
+
 function initBulkPrint() {
   buildBulkWellGrid();
 
-  el.bulkSelectAll.addEventListener("click", () => setAllBulkWellsChecked(true));
-  el.bulkSelectNone.addEventListener("click", () => setAllBulkWellsChecked(false));
-  el.bulkSelectRef.addEventListener("click", () => {
+  bindClick(el.bulkSelectAll, () => setAllBulkWellsChecked(true));
+  bindClick(el.bulkSelectNone, () => setAllBulkWellsChecked(false));
+  bindClick(el.bulkSelectRef, () => {
     setAllBulkWellsChecked(false);
     setBulkWellChecked(el.well.value, true);
     updateBulkSelectionCount();
     drawPreview();
   });
-  el.saveBulkCombined.addEventListener("click", saveBulkGcodeCombined);
-  el.saveBulkIndividual.addEventListener("click", saveBulkGcodeIndividual);
-  if (el.bulkDetailWell) {
-    el.bulkDetailWell.addEventListener("change", drawPreview);
-  }
+  bindClick(el.saveBulkCombined, saveBulkGcodeCombined);
+  bindClick(el.saveBulkIndividual, saveBulkGcodeIndividual);
+  bindChange(el.bulkDetailWell, drawPreview);
 }
 
 function initMultiPrint() {
@@ -2417,9 +2441,9 @@ function initMultiPrint() {
     });
   });
 
-  el.previewTarget.addEventListener("change", drawPreview);
+  bindChange(el.previewTarget, drawPreview);
 
-  el.p2AngleOffset.addEventListener("change", () => {
+  bindChange(el.p2AngleOffset, () => {
     updateModeUi();
     if (el.p2AngleOffset.checked) {
       dismissedPreviewIssueKey = "";
@@ -2437,7 +2461,7 @@ function initMultiPrint() {
   [el.p2OffsetMin, el.p2OffsetMax].forEach((input) => {
     input.addEventListener("input", drawPreview);
   });
-  el.p2OffsetSide.addEventListener("change", drawPreview);
+  bindChange(el.p2OffsetSide, drawPreview);
 
   el.p2snap.addEventListener("click", () => {
     const [sx, sy] = startPositionForCenterDotAtWellCenter(
@@ -2474,9 +2498,9 @@ function initMultiPrint() {
     });
   }
 
-  el.savePrint1.addEventListener("click", savePrint1Gcode);
-  el.savePrint2.addEventListener("click", savePrint2Gcode);
-  el.saveCombined.addEventListener("click", saveCombinedGcode);
+  bindClick(el.savePrint1, savePrint1Gcode);
+  bindClick(el.savePrint2, savePrint2Gcode);
+  bindClick(el.saveCombined, saveCombinedGcode);
 }
 
 function initTabs() {
@@ -2523,16 +2547,25 @@ function applyEcalcToExtrusion(targetPass) {
   drawPreview();
 }
 
-populateWells();
-document.body.dataset.appMode = "standard";
-initUserIssueModal();
-initMultiPrint();
-initBulkPrint();
-initCirclePrint();
-setDefaultsFromCurrentWell();
-initTabs();
-updateEcalc();
-drawPreview();
+function bootApp() {
+  try {
+    populateWells();
+    document.body.dataset.appMode = "standard";
+    initUserIssueModal();
+    initMultiPrint();
+    initBulkPrint();
+    initCirclePrint();
+    setDefaultsFromCurrentWell();
+    initTabs();
+    updateEcalc();
+    drawPreview();
+  } catch (err) {
+    console.error(err);
+    showFatalStartupError(err.message || String(err));
+  }
+}
+
+bootApp();
 
 el.well.addEventListener("change", () => {
   syncWellNumberFromDropdown();

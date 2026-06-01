@@ -1,7 +1,12 @@
 const { contextBridge, ipcRenderer } = require("electron");
+const path = require("path");
+
+const GcodeCore = require(path.join(__dirname, "shared", "gcode-core.js"));
+
+contextBridge.exposeInMainWorld("GcodeCore", GcodeCore);
 
 contextBridge.exposeInMainWorld("appInfo", {
-  name: "G-Code Generator (Electron Prototype)",
+  name: "G-Code Generator",
 });
 
 contextBridge.exposeInMainWorld("gcodeApi", {
