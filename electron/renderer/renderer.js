@@ -45,6 +45,8 @@ const {
   countDotsOutsideWell,
   validateDotsInsideWell,
   computeGridDotsFromParams,
+  getWellCenterMm,
+  isDotInsideWellMm,
   applyProgressiveYOffset,
   computeCircleDots,
   translateStartForWell,
