@@ -1,127 +1,129 @@
-# G-Code Generator v3.1
+# G-Code Generator (Electron)
 
-A professional G-code generator for 24-well plate bioprinting applications with live visual preview and comprehensive features.
+Desktop app for generating G-code for 24-well plate bioprinting, with live preview, multi-print, bulk print, and circle patterns.
+
+**Current release:** v2.0.11 · macOS (Intel + Apple Silicon)
+
+## Download and run (other Macs)
+
+No Python or Node install is required for lab users.
+
+1. Open **[Releases](https://github.com/ariellewolter/GCODE-GUI-Electron/releases)** and download the latest `G-Code Generator-*-mac.zip` (attached to the release tag).
+2. Unzip the archive.
+3. **First launch only:** Right-click `G-Code Generator.app` → **Open** → **Open** (macOS Gatekeeper). After that you can double-click normally.
+4. Configure your pattern, check the preview, then **Save G-code**.
+
+The build is a **universal macOS app** (Apple Silicon and Intel). It is signed and notarized when CI secrets are configured, so it should run on other Macs without extra setup.
+
+### What transfers between machines
+
+| Item | Behavior |
+|------|----------|
+| App install | Copy the `.zip` / `.app` to each Mac |
+| Last save folder | Stored per Mac in `~/.gcode_generator_config.json` |
+| G-code output | Same inputs → same dot positions and formatting on every Mac |
+| Network | Not required; everything runs locally |
+
+### Platform support
+
+| Platform | Status |
+|----------|--------|
+| macOS (Apple Silicon) | Supported via release zip |
+| macOS (Intel) | Supported via universal release zip |
+| Windows / Linux | Not available for the Electron app yet |
 
 ## Features
 
-### Core Functionality
-- 🎯 **24-Well Plate Presets** - Quick selection of standard well positions (A1-D6)
-- 📐 **Customizable Dot Patterns** - Configure number of dots, spacing, and rows
-- 🔍 **Live Visual Preview** - Real-time canvas showing dot placement in well
-- 🔎 **Zoom Control** - 50-200% zoom for detailed inspection
-- 📍 **Clickable Dots** - Click any dot to see exact X/Y coordinates
-- 📏 **Visual Spacing Indicators** - Orange/green arrows showing ΔX and ΔY measurements
+- **Standard print** — Grid patterns with live well preview
+- **Multi print** — Two passes in the same well (same or different pattern, optional Y offset, separate Z/E per pass)
+- **Bulk print** — One pattern applied across many wells
+- **Circle print** — Dots on a circle inside a well
+- **Validation** — Blocks save when dots fall outside the well or pass settings are incomplete; popups list which fields to fix
+- **E-value calculator** — Optional helper; apply to Print 1 or Print 2 extrusion fields
+- **Annotations** — Optional commented G-code for teaching/debugging
 
-### Advanced Features
-- ⚙️ **Calibration Panel** - Collapsible editor for all 24-well positions
-- 📝 **Code Annotations** - Optional inline comments explaining each G-code command
-- 💾 **Persistent Settings** - Remembers last save directory
-- ↺ **Reset Functions** - Reset individual calibrations or all fields
-- 🎨 **Modern UI** - Clean two-column layout with professional styling
+## Quick usage
 
-### Technical
-- ✅ Universal macOS binary (Intel x86_64 + Apple Silicon ARM64)
-- ✅ All dependencies bundled (no Python installation required)
-- ✅ Portable - runs on any Mac without setup
+1. Choose a tab: Standard, Multi print, Bulk print, or Circle print.
+2. Select the well and set start position, dots, rows, and spacing (or circle parameters).
+3. Set **Lower Z**, **Upper Z**, and **Extrusion (E)** for each pass.
+4. Confirm the preview (red dots = outside well; fix before saving).
+5. Click the save button for your mode.
 
-## Installation
+Exported coordinates use **2 decimal places** for X/Y/Z and **4** for E, matching the preview hover readout.
 
-### For Users
-1. Download `GCode-Generator-v3.1-macOS-Universal.zip`
-2. Unzip the file
-3. Right-click `GCode Generator.app` → Open (first time only)
-4. Use the app!
+## Default settings
 
-### For Developers
+- **Well bottom Z:** 2.35 mm (constant in generated header)
+- **Default lower Z offset:** 1.50 mm above well bottom
+- **Default upper Z offset:** 1.51 mm above well bottom
+- **Default extrusion (E):** 0.0105 per dot
+- **Well diameter:** 14.5 mm (24-well plate geometry in app)
 
-#### Requirements
-- Python 3.12+ from python.org (universal2 installer)
-- macOS 10.13+
+## For developers
 
-#### Build Instructions
+### Requirements
 
-**Universal Binary (Intel + Apple Silicon):**
+- macOS (for building the signed/universal `.app`)
+- Node.js 22+ and npm
+
+### Setup
+
 ```bash
-./build_universal.sh
+git clone https://github.com/ariellewolter/GCODE-GUI-Electron.git
+cd GCODE-GUI-Electron
+npm ci
 ```
 
-**ARM64 Only (Apple Silicon):**
+### Run locally
+
 ```bash
-./build_portable.sh
+npm run electron
 ```
 
-The built app will be in `dist/GCode Generator.app`
+### Tests
 
-## Usage
-
-1. **Select Well Position** - Choose from A1-D6 presets or use Custom
-2. **Configure Pattern:**
-   - Number of dots
-   - Dots per row
-   - Spacing in X and Y directions
-3. **Set Z Heights:**
-   - Lower Z offset (above well bottom)
-   - Upper Z offset (dispensing height)
-4. **Preview** - Use zoom and click dots to verify positions
-5. **Optional** - Check "Include code annotations" for educational output
-6. **Save** - Click "Save G-code" to generate the file
-
-## G-Code Output
-
-### Standard Mode
-```gcode
-; === Dot 1 at X=37.55, Y=46.30 ===
-G1 X37.55 Y46.30 F350
-G4 P200
-G1 Z3.28 F250
+```bash
+npm test
 ```
 
-### Annotated Mode (Default)
-```gcode
-; === Dot 1 at X=37.55, Y=46.30 ===
-G1 X37.55 Y46.30 F350  ; Move to dot position (X, Y) at 350 mm/min
-G4 P200                ; Pause 200ms to stabilize
-G1 Z3.28 F250          ; Move down to approach height at 250 mm/min
+### Build macOS universal zip (local)
+
+```bash
+npm run dist:mac
 ```
 
-## Default Settings
+Output: `dist-electron/G-Code Generator-*-mac.zip`
 
-- **Well Bottom Z:** 2.35 mm (built-in constant)
-- **Lower Z Offset:** 1.5 mm above well bottom
-- **Upper Z Offset:** 1.51 mm above well bottom
-- **Well Diameter:** 15.6 mm (for 24-well plates)
+### Release (CI)
 
-## File Structure
+Pushing a version tag triggers the GitHub Actions workflow (`.github/workflows/release-macos.yml`), which builds a universal zip, signs/notarizes when secrets are set, and uploads to Releases.
 
-```
-gcode_generator.py              # Main application code
-gcode_generator_universal.spec  # PyInstaller spec (universal)
-gcode_generator_portable.spec   # PyInstaller spec (ARM64)
-build_universal.sh              # Build script (universal binary)
-build_portable.sh               # Build script (ARM64 only)
-BUILD_INSTRUCTIONS.md           # Detailed build documentation
+```bash
+git tag v2.0.11
+git push origin main --tags
 ```
 
-## Version History
+Required GitHub secrets for signed releases: `MACOS_CERT_P12`, `MACOS_CERT_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
 
-### v3.1 (Current)
-- Added code annotation feature with checkbox
-- Improved dot clickability (larger dots, better detection)
-- Added visual spacing indicators (ΔX, ΔY arrows)
-- Enhanced coordinate display (bold red text)
-- Annotations checked by default
+## Project layout
 
-### v3.0
-- Complete rewrite with modern UI
-- Added live visual preview with zoom
-- Collapsible calibration panel
-- Two-column layout
-- Persistent settings (last save directory)
-- Menu bar with About dialog
+```
+electron/
+  main.js           # Window, save dialogs, dock icon
+  preload.js        # IPC bridge
+  renderer/         # UI and preview
+  shared/gcode-core.js   # Shared validation and geometry (also tested in Node)
+electron-build/
+  icon.icns         # macOS app icon
+  entitlements.mac.plist
+tests/
+  gcode-core.test.js
+```
 
-### Earlier Versions
-- Basic 24-well plate support
-- Simple form-based input
+## Legacy Python app
+
+The repository still contains an older **Python / Tkinter** build (`gcode_generator.py`, `build_universal.sh`, PyInstaller specs). New development and releases use the **Electron** app above. Use the Python scripts only if you maintain that stack separately.
 
 ## License
 
@@ -129,13 +131,4 @@ BUILD_INSTRUCTIONS.md           # Detailed build documentation
 
 ## Support
 
-For issues or questions, contact the developer or refer to `BUILD_INSTRUCTIONS.md` for technical details.
-
-## Building for Distribution
-
-See `BUILD_INSTRUCTIONS.md` for comprehensive build instructions, including:
-- Setting up Python environment
-- Creating universal vs ARM64-only builds
-- Troubleshooting common issues
-- Distribution best practices
-
+Open an issue on [GitHub](https://github.com/ariellewolter/GCODE-GUI-Electron/issues).

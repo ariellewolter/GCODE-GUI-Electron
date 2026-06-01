@@ -1,6 +1,6 @@
 {
   "name": "gcode_gui",
-  "version": "2.0.10",
+  "version": "2.0.11",
   "description": "A professional G-code generator for 24-well plate bioprinting applications with live visual preview and comprehensive features.",
   "main": "electron/main.js",
   "scripts": {
@@ -20,9 +20,15 @@
       "package.json"
     ],
     "mac": {
+      "icon": "electron-build/icon.icns",
       "category": "public.app-category.utilities",
       "target": [
-        "zip"
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
       ],
       "hardenedRuntime": true,
       "entitlements": "electron-build/entitlements.mac.plist",
@@ -32,16 +38,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ariellewolter/GCODE_GUI.git"
+    "url": "git+https://github.com/ariellewolter/GCODE-GUI-Electron.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/ariellewolter/GCODE_GUI/issues"
+    "url": "https://github.com/ariellewolter/GCODE-GUI-Electron/issues"
   },
-  "homepage": "https://github.com/ariellewolter/GCODE_GUI#readme",
+  "homepage": "https://github.com/ariellewolter/GCODE-GUI-Electron#readme",
   "devDependencies": {
     "electron": "^42.3.0",
     "electron-builder": "^25.1.8"

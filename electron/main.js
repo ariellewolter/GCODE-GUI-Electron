@@ -4,6 +4,14 @@ const path = require("path");
 const os = require("os");
 
 const CONFIG_FILE = path.join(os.homedir(), ".gcode_generator_config.json");
+const APP_ICON_PATH = path.join(__dirname, "assets", "icon.png");
+
+function applyAppIcon() {
+  if (!fs.existsSync(APP_ICON_PATH)) return;
+  if (process.platform === "darwin" && app.dock) {
+    app.dock.setIcon(APP_ICON_PATH);
+  }
+}
 
 function loadLastPath() {
   try {
@@ -33,6 +41,7 @@ function createWindow() {
     minWidth: 1000,
     minHeight: 700,
     show: false,
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -121,6 +130,7 @@ app.whenReady().then(() => {
     return { cancelled: false, dir, paths };
   });
 
+  applyAppIcon();
   createWindow();
 
   app.on("activate", () => {
