@@ -1,15 +1,22 @@
 const GcodeCore = window.GcodeCore;
 
-function showFatalStartupError(message) {
+function showFatalStartupError(message, detail) {
+  if (document.getElementById("startup-error")) return;
   const panel = document.createElement("div");
   panel.id = "startup-error";
   panel.style.cssText = "margin:16px;padding:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font:14px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;";
-  panel.innerHTML = `<strong>App failed to start.</strong><p style="margin:8px 0 0">${message}</p><p style="margin:8px 0 0">Try reinstalling from the latest release zip, or run from source with <code>npm run electron</code>.</p>`;
+  const detailHtml = detail
+    ? `<pre style="margin:8px 0 0;white-space:pre-wrap;font-size:12px">${detail}</pre>`
+    : "";
+  panel.innerHTML = `<strong>App failed to start.</strong><p style="margin:8px 0 0">${message}</p>${detailHtml}`;
   document.body.prepend(panel);
 }
 
-if (!GcodeCore) {
-  showFatalStartupError("Core module (GcodeCore) did not load. Preview, defaults, and tabs cannot run.");
+if (!GcodeCore || typeof GcodeCore.computeGridLayout !== "function") {
+  showFatalStartupError(
+    "Core module (GcodeCore) did not load.",
+    window.GcodeCoreLoadError || ""
+  );
   throw new Error("GcodeCore is not available");
 }
 
@@ -1931,6 +1938,7 @@ function drawPreview() {
   const refCy = refWell[1];
 
   const canvas = el.canvasStd;
+  if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const cw = canvas.width;
   const ch = canvas.height;

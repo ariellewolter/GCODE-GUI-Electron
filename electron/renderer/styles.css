@@ -280,6 +280,9 @@ button.primary {
   font-size: 12px;
 }
 
+body:not([data-app-mode]) .multi-only,
+body:not([data-app-mode]) .bulk-only,
+body:not([data-app-mode]) .circle-only,
 body[data-app-mode="standard"] .multi-only,
 body[data-app-mode="standard"] .bulk-only,
 body[data-app-mode="standard"] .circle-only {
