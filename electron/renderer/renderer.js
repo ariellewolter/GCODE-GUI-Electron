@@ -2126,13 +2126,29 @@ function updateEcalc() {
 }
 
 async function saveGcodeFile(contents, defaultFileName) {
-  const result = await window.gcodeApi.saveGcode({ defaultFileName, contents });
-  if (result.cancelled) {
-    el.saveStatus.textContent = "Save cancelled.";
-  } else if (result.error) {
-    el.saveStatus.textContent = `Save failed: ${result.message}`;
-  } else {
-    el.saveStatus.textContent = `Saved: ${result.path}`;
+  if (!window.gcodeApi?.saveGcode) {
+    reportSaveFailure(createUserIssue({
+      id: "SAVE_UNAVAILABLE",
+      title: "Save unavailable",
+      message: "File export requires the G-Code Generator desktop app. Run npm run electron or open the .app from Releases.",
+      fields: [],
+      focusId: null,
+    }), "Save unavailable outside the Electron app.");
+    return;
+  }
+
+  el.saveStatus.textContent = "";
+  try {
+    const result = await window.gcodeApi.saveGcode({ defaultFileName, contents });
+    if (result.cancelled) {
+      el.saveStatus.textContent = "Save cancelled.";
+    } else if (result.error) {
+      el.saveStatus.textContent = `Save failed: ${result.message}`;
+    } else {
+      el.saveStatus.textContent = `Saved: ${result.path}`;
+    }
+  } catch (err) {
+    el.saveStatus.textContent = `Save failed: ${err.message || String(err)}`;
   }
 }
 
@@ -2320,6 +2336,16 @@ async function saveBulkGcodeIndividual() {
     reportSaveFailure(validated.issues || [validated.issue], validated.error);
     return;
   }
+  if (!window.gcodeApi?.saveGcodeFiles) {
+    reportSaveFailure(createUserIssue({
+      id: "SAVE_UNAVAILABLE",
+      title: "Save unavailable",
+      message: "File export requires the G-Code Generator desktop app. Run npm run electron or open the .app from Releases.",
+      fields: [],
+      focusId: null,
+    }), "Save unavailable outside the Electron app.");
+    return;
+  }
   const { wells } = validated;
   const files = wells.map((wellKey) => {
     const params = collectBulkParamsForWell(wellKey);
@@ -2329,21 +2355,26 @@ async function saveBulkGcodeIndividual() {
     };
   });
 
-  const result = await window.gcodeApi.saveGcodeFiles({ files });
-  if (result.cancelled) {
-    el.saveStatus.textContent = "Save cancelled.";
-    return;
+  el.saveStatus.textContent = "";
+  try {
+    const result = await window.gcodeApi.saveGcodeFiles({ files });
+    if (result.cancelled) {
+      el.saveStatus.textContent = "Save cancelled.";
+      return;
+    }
+    if (result.error) {
+      const rolledBack = result.paths?.length
+        ? ` (${result.paths.length} file${result.paths.length === 1 ? "" : "s"} written then rolled back)`
+        : "";
+      el.saveStatus.textContent = `Save failed: ${result.message}${rolledBack}`;
+      return;
+    }
+    const count = result.paths.length;
+    const noun = count === 1 ? "file" : "files";
+    el.saveStatus.textContent = `Saved ${count} ${noun} to ${result.dir}`;
+  } catch (err) {
+    el.saveStatus.textContent = `Save failed: ${err.message || String(err)}`;
   }
-  if (result.error) {
-    const rolledBack = result.paths?.length
-      ? ` (${result.paths.length} file${result.paths.length === 1 ? "" : "s"} written then rolled back)`
-      : "";
-    el.saveStatus.textContent = `Save failed: ${result.message}${rolledBack}`;
-    return;
-  }
-  const count = result.paths.length;
-  const noun = count === 1 ? "file" : "files";
-  el.saveStatus.textContent = `Saved ${count} ${noun} to ${result.dir}`;
 }
 
 function populateWells() {

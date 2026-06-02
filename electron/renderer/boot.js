@@ -21,6 +21,14 @@ function loadRendererScript() {
   script.onerror = () => {
     showBootFailure("Could not load the application UI (renderer.js).");
   };
+  script.onload = () => {
+    if (!window.gcodeApi?.saveGcode) {
+      showBootFailure(
+        "Save/export is unavailable in this window.",
+        "Launch the desktop app:\n  npm run electron\n—or open G-Code Generator.app from Releases.\n\nDo not open index.html in a browser."
+      );
+    }
+  };
   document.body.appendChild(script);
 }
 

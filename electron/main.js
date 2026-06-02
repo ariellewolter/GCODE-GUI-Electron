@@ -6,6 +6,28 @@ const os = require("os");
 const CONFIG_FILE = path.join(os.homedir(), ".gcode_generator_config.json");
 const APP_ICON_PATH = path.join(__dirname, "assets", "icon.png");
 
+let mainWindow = null;
+
+function resolvePreloadPath() {
+  const bundled = path.join(__dirname, "preload.js");
+  if (fs.existsSync(bundled)) return path.resolve(bundled);
+
+  const unpacked = path.join(
+    process.resourcesPath,
+    "app.asar.unpacked",
+    "electron",
+    "preload.js"
+  );
+  if (fs.existsSync(unpacked)) return unpacked;
+
+  return path.resolve(bundled);
+}
+
+function parentWindowFromEvent(event) {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win && !win.isDestroyed() ? win : mainWindow;
+}
+
 function applyAppIcon() {
   if (!fs.existsSync(APP_ICON_PATH)) return;
   if (process.platform === "darwin" && app.dock) {
@@ -35,7 +57,7 @@ function saveLastPath(lastSaveDir) {
 }
 
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 1000,
@@ -43,27 +65,38 @@ function createWindow() {
     show: false,
     icon: APP_ICON_PATH,
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: resolvePreloadPath(),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
 
-  win.loadFile(path.join(__dirname, "renderer", "index.html"));
+  mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
+    console.error("preload failed:", preloadPath, error?.message || error);
+  });
 
-  win.webContents.once("did-finish-load", () => {
-    win.show();
-    win.focus();
+  mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+
+  mainWindow.webContents.once("did-finish-load", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  mainWindow.on("closed", () => {
+    mainWindow = null;
   });
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle("save-gcode", async (_event, payload) => {
+  ipcMain.handle("save-gcode", async (event, payload) => {
     if (!payload || typeof payload.defaultFileName !== "string" || typeof payload.contents !== "string") {
       return { cancelled: false, error: true, message: "Invalid save payload." };
     }
     const { defaultFileName, contents } = payload;
-    const response = await dialog.showSaveDialog({
+    const parentWindow = parentWindowFromEvent(event);
+    if (parentWindow) parentWindow.focus();
+    const response = await dialog.showSaveDialog(parentWindow, {
       title: "Save G-code as",
       defaultPath: path.join(loadLastPath(), defaultFileName),
       filters: [{ name: "G-code files", extensions: ["txt"] }],
@@ -82,7 +115,7 @@ app.whenReady().then(() => {
     return { cancelled: false, path: response.filePath };
   });
 
-  ipcMain.handle("save-gcode-files", async (_event, payload) => {
+  ipcMain.handle("save-gcode-files", async (event, payload) => {
     if (!payload || !Array.isArray(payload.files) || payload.files.length === 0) {
       return { cancelled: false, error: true, message: "No files to save." };
     }
@@ -92,7 +125,9 @@ app.whenReady().then(() => {
       }
     }
     const { files } = payload;
-    const response = await dialog.showOpenDialog({
+    const parentWindow = parentWindowFromEvent(event);
+    if (parentWindow) parentWindow.focus();
+    const response = await dialog.showOpenDialog(parentWindow, {
       title: "Choose folder for per-well G-code files",
       defaultPath: loadLastPath(),
       properties: ["openDirectory", "createDirectory"],

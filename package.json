@@ -1,12 +1,12 @@
 {
   "name": "gcode_gui",
-  "version": "2.0.15",
+  "version": "2.0.16",
   "description": "A professional G-code generator for 24-well plate bioprinting applications with live visual preview and comprehensive features.",
   "main": "electron/main.js",
   "scripts": {
     "sync:core": "node scripts/sync-gcode-core.js",
-    "electron": "npm run sync:core && electron .",
-    "dist:mac": "npm run sync:core && electron-builder --mac --publish never",
+    "electron": "npm run sync:core && node scripts/run-electron.js",
+    "dist:mac": "npm run sync:core && env -u ELECTRON_RUN_AS_NODE electron-builder --mac --publish never",
     "test": "node scripts/check-renderer-core-imports.js && node --test tests/"
   },
   "build": {
