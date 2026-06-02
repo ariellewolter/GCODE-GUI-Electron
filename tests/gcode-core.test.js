@@ -27,6 +27,8 @@ const {
   computeCircleDots,
   resolveParamsDots,
   parsePatternFloat,
+  multiPrintFileNameSuffix,
+  defaultMultiPrintFileName,
 } = core;
 
 function mockPassFields(lower, upper, extrusion) {
@@ -298,6 +300,45 @@ describe("parsePatternFloat", () => {
   it("parses the same values as parseEcalcFloat for non-empty input", () => {
     assert.equal(parsePatternFloat("37.55"), 37.55);
     assert.equal(parsePatternFloat("  2.5 "), 2.5);
+  });
+});
+
+describe("multiPrintFileNameSuffix", () => {
+  it("tags same pattern when Y offset is off", () => {
+    assert.equal(
+      multiPrintFileNameSuffix({ yOffsetEnabled: false, print2PatternMode: "same" }),
+      "_samePat"
+    );
+  });
+
+  it("tags different pattern in same well", () => {
+    assert.equal(
+      multiPrintFileNameSuffix({ yOffsetEnabled: false, print2PatternMode: "different" }),
+      "_diffPat"
+    );
+  });
+
+  it("tags Y offset range and negative side", () => {
+    assert.equal(
+      multiPrintFileNameSuffix({
+        yOffsetEnabled: true,
+        yOffsetMin: 0.1,
+        yOffsetMax: 1,
+        yOffsetNegative: true,
+      }),
+      "_yOff0.10-1.00neg"
+    );
+  });
+
+  it("builds full multi-print save name", () => {
+    assert.equal(
+      defaultMultiPrintFileName(
+        { wellNumber: "B3", lowerZ: 1.5 },
+        "_2pass",
+        { yOffsetEnabled: false, print2PatternMode: "different" }
+      ),
+      "well_B3_Z1.50_2pass_diffPat.txt"
+    );
   });
 });
 

@@ -56,6 +56,7 @@ const {
   passSettingsMatch,
   computeGridLayout,
   defaultFileNameForParams,
+  defaultMultiPrintFileName,
   defaultBulkFileName,
   validateAngleOffsetValues,
   buildCombinedGcode: coreBuildCombinedGcode,
@@ -653,6 +654,21 @@ function applyPrint2PassSettings(params) {
 function getPrint2Mode() {
   const selected = document.querySelector('input[name="print-2-mode"]:checked');
   return selected ? selected.value : "same";
+}
+
+function getMultiPrintFileNameOptions() {
+  const offset = getAngleOffsetSettings();
+  return {
+    yOffsetEnabled: offset.enabled,
+    yOffsetMin: offset.valid ? offset.min : null,
+    yOffsetMax: offset.valid ? offset.max : null,
+    yOffsetNegative: offset.sign < 0,
+    print2PatternMode: getPrint2Mode(),
+  };
+}
+
+function defaultMultiPrintSaveFileName(params, passSuffix) {
+  return defaultMultiPrintFileName(params, passSuffix, getMultiPrintFileNameOptions());
 }
 
 function prepareExportState() {
@@ -2181,7 +2197,7 @@ async function savePrint1Gcode() {
     reportSaveFailure(issueForValidationError(err, { focusId: "start-x" }), err);
     return;
   }
-  await saveGcodeFile(paramsToGcode(print1), defaultFileNameForParams(print1, "_print1"));
+  await saveGcodeFile(paramsToGcode(print1), defaultMultiPrintSaveFileName(print1, "_print1"));
 }
 
 async function savePrint2Gcode() {
@@ -2212,7 +2228,7 @@ async function savePrint2Gcode() {
   }
   await saveGcodeFile(
     paramsToGcode(print2),
-    defaultFileNameForParams(print2, "_print2")
+    defaultMultiPrintSaveFileName(print2, "_print2")
   );
 }
 
@@ -2256,7 +2272,7 @@ async function saveCombinedGcode() {
   const sameMode = getPrint2Mode() === "same";
   await saveGcodeFile(
     buildCombinedGcode(print1, print2, sameMode),
-    defaultFileNameForParams(print1, "_2pass")
+    defaultMultiPrintSaveFileName(print1, "_2pass")
   );
 }
 

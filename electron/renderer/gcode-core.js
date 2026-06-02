@@ -261,6 +261,30 @@
     return `well_${params.wellNumber}_Z${formatZMm(params.lowerZ)}${suffix}.txt`;
   }
 
+  /**
+   * Multi-print save tag: Y-offset range, or same vs different pattern in the same well.
+   */
+  function multiPrintFileNameSuffix({
+    yOffsetEnabled = false,
+    yOffsetMin = null,
+    yOffsetMax = null,
+    yOffsetNegative = false,
+    print2PatternMode = "same",
+  } = {}) {
+    if (yOffsetEnabled) {
+      if (yOffsetMin !== null && yOffsetMax !== null) {
+        const range = `${formatCoordMm(yOffsetMin)}-${formatCoordMm(yOffsetMax)}`;
+        return `_yOff${range}${yOffsetNegative ? "neg" : ""}`;
+      }
+      return "_yOff";
+    }
+    return print2PatternMode === "different" ? "_diffPat" : "_samePat";
+  }
+
+  function defaultMultiPrintFileName(params, passSuffix, modeOptions) {
+    return `well_${params.wellNumber}_Z${formatZMm(params.lowerZ)}${passSuffix}${multiPrintFileNameSuffix(modeOptions)}.txt`;
+  }
+
   function defaultBulkFileName(wells, lowerZ) {
     if (wells.length === 1) {
       return `well_${wells[0]}_Z${formatZMm(lowerZ)}.txt`;
@@ -319,6 +343,8 @@
     computeGridLayout,
     buildCombinedGcode,
     defaultFileNameForParams,
+    defaultMultiPrintFileName,
+    multiPrintFileNameSuffix,
     defaultBulkFileName,
   };
 });
