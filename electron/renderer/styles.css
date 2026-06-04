@@ -105,7 +105,10 @@ body {
 .controls .print-2-controls > label:first-child,
 .controls .print-2-pattern-fields > label:first-child,
 .controls .print-2-pass-fields > label:first-child,
-.controls .print-2-angle-controls > label:first-child {
+.controls .print-2-angle-controls > label:first-child,
+.controls .extra-print-card .print-2-pass-fields > label:first-child,
+.controls .extra-print-card .print-2-pattern-fields > label:first-child,
+.controls .extra-print-card .print-2-angle-controls > label:first-child {
   margin-top: 0;
 }
 
@@ -722,6 +725,66 @@ body[data-app-mode="circle-print"] #circle-preview-wrap {
   margin-top: 18px;
 }
 
+.keep-multi-pattern-metrics {
+  margin: 0 0 12px;
+}
+
+.keep-multi-pattern-metrics span {
+  line-height: 1.4;
+}
+
+.extra-prints-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+}
+
+.extra-print-card {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.extra-print-card:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.extra-print-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.extra-print-card-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.extra-print-note {
+  margin: 0 0 10px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.extra-print-card .extra-save-pass {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.extra-print-card .print-2-options {
+  margin-top: 0;
+}
+
+#add-extra-print {
+  margin-top: 16px;
+  width: 100%;
+}
+
 .print-2-mode-fieldset.disabled {
   opacity: 0.55;
   pointer-events: none;
@@ -736,4 +799,8 @@ body[data-app-mode="circle-print"] #circle-preview-wrap {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
+}
+
+.ecalc-apply-extra {
+  display: contents;
 }

@@ -249,12 +249,30 @@
   }
 
   function buildCombinedGcode(print1, print2, sameMode, paramsToGcode) {
+    return buildCombinedMultiGcode(
+      print1,
+      [{ params: print2, sameMode, passNum: 2 }],
+      paramsToGcode
+    );
+  }
+
+  /**
+   * @param {object} print1
+   * @param {Array<{ params: object, sameMode: boolean, passNum: number }>} extraPasses
+   * @param {function} paramsToGcode
+   */
+  function buildCombinedMultiGcode(print1, extraPasses, paramsToGcode) {
     const gcode1 = paramsToGcode(print1);
-    const samePattern = sameMode && !print2.customDots;
-    const repeatGcode = samePattern && passSettingsMatch(print1, print2);
-    const gcode2 = repeatGcode ? gcode1 : paramsToGcode(print2);
-    const sameNote = repeatGcode ? "; (same pattern as Print 1)\n" : "";
-    return `${gcode1}\n\n; === Print 2 (second pass, same well ${print1.wellNumber}) ===\n${sameNote}\n${gcode2}`;
+    let out = gcode1;
+    (extraPasses || []).forEach((pass) => {
+      const passNum = pass.passNum || 2;
+      const samePattern = pass.sameMode && !pass.params.customDots;
+      const repeatGcode = samePattern && passSettingsMatch(print1, pass.params);
+      const gcodeN = repeatGcode ? gcode1 : paramsToGcode(pass.params);
+      const sameNote = repeatGcode ? "; (same pattern as Print 1)\n" : "";
+      out += `\n\n; === Print ${passNum} (pass ${passNum}, same well ${print1.wellNumber}) ===\n${sameNote}${gcodeN}`;
+    });
+    return out;
   }
 
   function defaultFileNameForParams(params, suffix) {
@@ -342,6 +360,7 @@
     applyPrint2PassSettings,
     computeGridLayout,
     buildCombinedGcode,
+    buildCombinedMultiGcode,
     defaultFileNameForParams,
     defaultMultiPrintFileName,
     multiPrintFileNameSuffix,

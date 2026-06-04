@@ -150,104 +150,18 @@
           </div>
 
           <div class="multi-print-section multi-only">
-            <h2>Print 2</h2>
-            <p class="multi-print-note">Second pass in the <strong>same well</strong> as Print 1 (always on).</p>
-
-            <div id="print-2-options" class="print-2-options">
-              <fieldset id="print-2-mode-fieldset" class="print-2-mode-fieldset">
-                <legend>Second pass G-code</legend>
-                <label class="radio">
-                  <input type="radio" name="print-2-mode" value="same" checked />
-                  <span>Same pattern as Print 1</span>
-                </label>
-                <label class="radio">
-                  <input type="radio" name="print-2-mode" value="different" />
-                  <span>Different pattern in same well</span>
-                </label>
-              </fieldset>
-
-              <div id="print-2-angle-options" class="print-2-angle-options">
-                <label class="checkbox">
-                  <input id="p2-angle-offset" type="checkbox" />
-                  <span>Offset pass 2 along Y only (X matches Print 1)</span>
-                </label>
-                <p id="p2-offset-uses-print1-note" class="note p2-offset-uses-print1-note" hidden>
-                  Pass 2 uses Print 1 Start X/Y, dots, and spacing above. Only the Y offset below applies to pass 2.
-                </p>
-                <div id="p2-angle-controls" class="print-2-angle-controls" hidden>
-                  <p class="note">
-                    X stays on Print 1. Y offset steps across each row: first column min, last column max.
-                    Example (10 per row): dots 1, 11, 21 → +0.1 mm Y; dots 10, 20, 30 → +1.0 mm Y.
-                  </p>
-                  <label>Min Y offset (mm)</label>
-                  <input id="p2-offset-min" type="number" step="0.01" value="0.1" />
-
-                  <label>Max Y offset (mm)</label>
-                  <input id="p2-offset-max" type="number" step="0.01" value="1" />
-
-                  <label>Y offset direction</label>
-                  <select id="p2-offset-side">
-                    <option value="positive">+Y</option>
-                    <option value="negative">−Y</option>
-                  </select>
-                </div>
-              </div>
-
-              <div id="print-2-pass-fields" class="print-2-pass-fields">
-                <h3 class="print-2-pass-heading">Print 2 pass settings</h3>
-                <p class="note print-2-pass-note">
-                  Lower Z, Upper Z, and E default to Print 1 values. Change here to apply only to pass 2.
-                </p>
-                <label>Lower Z Offset (mm above bottom)</label>
-                <input id="p2-lower-z" type="number" step="0.01" />
-
-                <label>Upper Z Offset (mm above bottom)</label>
-                <input id="p2-upper-z" type="number" step="0.01" />
-
-                <label>Extrusion per dot (E)</label>
-                <input id="p2-extrusion-e" type="number" step="0.0001" />
-
-                <button type="button" id="p2-sync-pass">Use Print 1 Z and E</button>
-              </div>
-
-              <div id="print-2-controls" class="print-2-controls" hidden>
-                <div id="print-2-pattern-fields" class="print-2-pattern-fields">
-                  <h3 class="print-2-pattern-heading">Print 2 pattern</h3>
-                  <p class="note print-2-pattern-note">
-                    Separate Start X/Y, dots, and spacing for pass 2.
-                  </p>
-                  <label>Start X (mm)</label>
-                  <input id="p2-start-x" type="number" step="0.01" />
-
-                  <label>Start Y (mm)</label>
-                  <input id="p2-start-y" type="number" step="0.01" />
-
-                <label>Number of Dots</label>
-                <input id="p2-dots" type="number" readonly tabindex="-1" aria-readonly="true" title="Auto-calculated: Dots Per Row × Number of Rows" />
-
-                  <label>Dots Per Row</label>
-                  <input id="p2-per-row" type="number" />
-
-                  <label>Number of Rows</label>
-                  <input id="p2-rows" type="number" />
-
-                  <label>Dot Spacing X (mm)</label>
-                  <input id="p2-spacing-x" type="number" step="0.01" />
-
-                  <label>Dot Spacing Y (mm)</label>
-                  <input id="p2-spacing-y" type="number" step="0.01" />
-
-                  <button type="button" id="p2-snap">Snap to well center</button>
-                </div>
-              </div>
-            </div>
+            <label class="checkbox keep-multi-pattern-metrics">
+              <input id="keep-multi-pattern-metrics" type="checkbox" />
+              <span>Keep pattern metrics when changing well (start X/Y shift per well; spacing and E stay the same for all passes)</span>
+            </label>
+            <div id="extra-prints-container" class="extra-prints-container"></div>
+            <button type="button" id="add-extra-print" class="multi-only ws-choice-secondary">+ Add print pass</button>
           </div>
 
           <div class="buttons">
             <button id="reset">Reset All Fields</button>
             <button type="button" id="save" class="standard-only primary">Save G-code</button>
             <button type="button" id="save-print-1" class="multi-only">Save Print 1</button>
-            <button type="button" id="save-print-2" class="multi-only">Save Print 2</button>
             <button type="button" id="save-combined" class="multi-only primary">Save combined G-code</button>
             <button type="button" id="save-bulk-combined" class="bulk-only primary">Save combined file</button>
             <button type="button" id="save-bulk-individual" class="bulk-only">Save one file per well</button>
@@ -262,9 +176,8 @@
             <label id="preview-target-wrap" class="preview-target multi-only" hidden>
               Show
               <select id="preview-target">
-                <option value="both" selected>Both prints</option>
+                <option value="both" selected>All passes</option>
                 <option value="1">Print 1</option>
-                <option value="2">Print 2</option>
               </select>
             </label>
           </div>
@@ -330,7 +243,7 @@
             </p>
             <div class="ecalc-apply-actions">
               <button type="button" id="ecalc-apply-p1">Apply E to Print 1</button>
-              <button type="button" id="ecalc-apply-p2" class="multi-only">Apply E to Print 2</button>
+              <div id="ecalc-apply-extra" class="ecalc-apply-extra multi-only"></div>
             </div>
           </div>
         </section>
@@ -350,6 +263,7 @@
     </div>
 
     <script src="./gcode-core.js"></script>
+    <script src="./multi-print-extra.js"></script>
     <script src="./boot.js"></script>
   </body>
 </html>

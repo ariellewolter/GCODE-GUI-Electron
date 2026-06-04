@@ -60,6 +60,7 @@ const {
   defaultBulkFileName,
   validateAngleOffsetValues,
   buildCombinedGcode: coreBuildCombinedGcode,
+  buildCombinedMultiGcode,
   formatCoordMm,
   formatZMm,
   formatExtrusionE,
@@ -107,25 +108,9 @@ const el = {
   ecalcStepsUl: document.getElementById("ecalc-steps-ul"),
   ecalcStepsInj: document.getElementById("ecalc-steps-inj"),
   ecalcVoidH: document.getElementById("ecalc-void-h"),
-  print2Options: document.getElementById("print-2-options"),
-  print2ModeFieldset: document.getElementById("print-2-mode-fieldset"),
-  print2Controls: document.getElementById("print-2-controls"),
-  print2PatternFields: document.getElementById("print-2-pattern-fields"),
-  print2PassFields: document.getElementById("print-2-pass-fields"),
-  p2startX: document.getElementById("p2-start-x"),
-  p2startY: document.getElementById("p2-start-y"),
-  p2dots: document.getElementById("p2-dots"),
-  p2perRow: document.getElementById("p2-per-row"),
-  p2rows: document.getElementById("p2-rows"),
-  p2spacingX: document.getElementById("p2-spacing-x"),
-  p2spacingY: document.getElementById("p2-spacing-y"),
-  p2lowerZ: document.getElementById("p2-lower-z"),
-  p2upperZ: document.getElementById("p2-upper-z"),
-  p2extrusionE: document.getElementById("p2-extrusion-e"),
-  p2syncPass: document.getElementById("p2-sync-pass"),
-  p2snap: document.getElementById("p2-snap"),
+  extraPrintsContainer: document.getElementById("extra-prints-container"),
+  addExtraPrint: document.getElementById("add-extra-print"),
   savePrint1: document.getElementById("save-print-1"),
-  savePrint2: document.getElementById("save-print-2"),
   saveCombined: document.getElementById("save-combined"),
   saveBulkCombined: document.getElementById("save-bulk-combined"),
   saveBulkIndividual: document.getElementById("save-bulk-individual"),
@@ -146,16 +131,10 @@ const el = {
   wellNumberLabel: document.getElementById("well-number-label"),
   previewTargetWrap: document.getElementById("preview-target-wrap"),
   previewTarget: document.getElementById("preview-target"),
-  print2AngleOptions: document.getElementById("print-2-angle-options"),
-  p2AngleOffset: document.getElementById("p2-angle-offset"),
-  p2AngleControls: document.getElementById("p2-angle-controls"),
-  p2OffsetMin: document.getElementById("p2-offset-min"),
-  p2OffsetMax: document.getElementById("p2-offset-max"),
-  p2OffsetSide: document.getElementById("p2-offset-side"),
   print1PatternNote: document.getElementById("print-1-pattern-note"),
-  p2OffsetUsesPrint1Note: document.getElementById("p2-offset-uses-print1-note"),
+  keepMultiPatternMetrics: document.getElementById("keep-multi-pattern-metrics"),
   ecalcApplyP1: document.getElementById("ecalc-apply-p1"),
-  ecalcApplyP2: document.getElementById("ecalc-apply-p2"),
+  ecalcApplyExtra: document.getElementById("ecalc-apply-extra"),
   userIssueModal: document.getElementById("user-issue-modal"),
   userIssueModalTitle: document.getElementById("user-issue-modal-title"),
   userIssueModalBody: document.getElementById("user-issue-modal-body"),
@@ -191,10 +170,8 @@ const Y_OFFSET_FIELDS = [
   { label: "Y offset direction", id: "p2-offset-side" },
 ];
 
-let lastPreviewIssueKey = "";
-let dismissedPreviewIssueKey = "";
-let previewIssueBootstrapped = false;
 let modalFocusTargetId = null;
+let multiPatternLastWell = "A1";
 
 function createUserIssue({ id, title, message, fields = [], focusId = null, blocking = true }) {
   return {
@@ -217,28 +194,19 @@ function renderUserIssueHtml(issue) {
   return `<div class="user-issue-block">${badge}<h4>${issue.title}</h4><p>${issue.message}</p>${fieldsHtml}</div>`;
 }
 
-function showUserIssuesModal(issues, { source = "save" } = {}) {
+function showUserIssuesModal(issues) {
   if (!issues.length || !el.userIssueModal) return;
   const hasBlocking = issues.some((issue) => issue.blocking !== false);
-  let title;
-  if (source === "save") {
-    title = hasBlocking ? "Cannot save G-code" : "Save notice";
-  } else if (hasBlocking) {
-    title = "Preview notice — save will be blocked";
-  } else {
-    title = "Heads up — export still OK";
-  }
-  el.userIssueModalTitle.textContent = title;
+  el.userIssueModalTitle.textContent = hasBlocking ? "Cannot save G-code" : "Save notice";
   el.userIssueModalBody.innerHTML = issues.map(renderUserIssueHtml).join("");
   modalFocusTargetId = issues.find((issue) => issue.focusId)?.focusId || null;
   el.userIssueModalFocus.hidden = !modalFocusTargetId;
   el.userIssueModal.hidden = false;
 }
 
-function hideUserIssueModal(dismissKey = null) {
+function hideUserIssueModal() {
   if (!el.userIssueModal) return;
   el.userIssueModal.hidden = true;
-  if (dismissKey) dismissedPreviewIssueKey = dismissKey;
   modalFocusTargetId = null;
 }
 
@@ -252,7 +220,7 @@ function focusIssueField(fieldId) {
 function reportSaveFailure(issues, shortMessage) {
   const list = Array.isArray(issues) ? issues : [issues];
   el.saveStatus.textContent = shortMessage || list[0]?.message || "Save blocked.";
-  showUserIssuesModal(list, { source: "save" });
+  showUserIssuesModal(list);
 }
 
 function collectBulkWellOutsideFailures(wells) {
@@ -332,7 +300,13 @@ function issueForValidationError(err, context = {}) {
         { label: "Circle center Y", id: "circle-center-y" },
         { label: "Circle radius", id: "circle-radius" },
       ]
-      : (context.print2 ? [{ label: "Print 2 Start X", id: "p2-start-x" }, { label: "Print 2 Start Y", id: "p2-start-y" }, ...GRID_PATTERN_FIELDS.slice(2)] : GRID_PATTERN_FIELDS);
+      : (context.printNum
+        ? [
+          { label: `Print ${context.printNum} Start X`, id: `p${context.printNum}-start-x` },
+          { label: `Print ${context.printNum} Start Y`, id: `p${context.printNum}-start-y` },
+          ...GRID_PATTERN_FIELDS.slice(2),
+        ]
+        : GRID_PATTERN_FIELDS);
     return issueForDotsOutside(err, fields, context.focusId);
   }
   if (err.includes("Radius exceeds")) {
@@ -362,123 +336,17 @@ function issueForValidationError(err, context = {}) {
   });
 }
 
-function collectUserIssues() {
-  const issues = [];
-
-  const pass1Err = validatePassSettings(print1FieldTarget());
-  if (pass1Err) issues.push(issueForPassSettings(pass1Err, "print1"));
-
-  if (isSecondPassEnabled()) {
-    const pass2Err = validatePassSettings(print2FieldTarget());
-    if (pass2Err) issues.push(issueForPassSettings(pass2Err, "print2"));
-
-    if (el.p2AngleOffset.checked) {
-      const angleErr = validateAngleOffset();
-      if (angleErr) issues.push(issueForAngleOffset(angleErr));
-    } else if (getPrint2Mode() === "same") {
-      const print1 = collectPrint1Params();
-      const print2 = collectPrint2Params();
-      if (print2 && !print2.offsetInvalid && !passSettingsMatch(print1, print2)) {
-        issues.push(createUserIssue({
-          id: "PRINT2_PASS_DIFFERS",
-          title: "Print 2 uses different Z or E",
-          message: "Same pattern mode keeps Print 1 dot positions. Export runs the same XY path twice using Print 2 Lower Z, Upper Z, and E below.",
-          fields: PRINT2_PASS_FIELDS,
-          focusId: "p2-lower-z",
-          blocking: false,
-        }));
-      }
-    }
-
-    const print1 = collectPrint1Params();
-    const print2 = collectPrint2Params();
-    const err1 = validatePrintParams(print1);
-    if (err1) issues.push(issueForValidationError(err1, { focusId: "start-x" }));
-    if (print2 && !print2.offsetInvalid) {
-      const err2 = validatePrintParams(print2);
-      if (err2) {
-        issues.push(issueForValidationError(err2, {
-          print2: !el.p2AngleOffset.checked && getPrint2Mode() === "different",
-          focusId: el.p2AngleOffset.checked ? "p2-offset-max" : "p2-start-x",
-        }));
-      }
-    }
-  } else if (isBulkPrintEnabled()) {
-    const wells = getSelectedBulkWells();
-    if (!wells.length) {
-      issues.push(issueForValidationError("Error: Select at least one well to print."));
-    }
-    const ref = collectPrint1Params();
-    const refErr = validatePrintParams(ref);
-    if (refErr) {
-      const refSelected = wells.includes(ref.well);
-      issues.push(createUserIssue({
-        id: "BULK_REF_PATTERN",
-        title: "Reference well pattern invalid",
-        message: refSelected
-          ? `${refErr} The reference well (${ref.well}) defines the pattern copied to every selected well.`
-          : `${refErr} Bulk print always validates the reference well (${ref.well}) because it defines the template pattern, even when ${ref.well} is not checked. Fix the pattern fields above or re-check ${ref.well} to preview it.`,
-        fields: GRID_PATTERN_FIELDS,
-        focusId: "start-x",
-      }));
-    } else if (wells.length && !wells.includes(ref.well)) {
-      issues.push(createUserIssue({
-        id: "BULK_REF_NOT_SELECTED",
-        title: "Reference well is not selected",
-        message: `Reference well ${ref.well} is not checked in the well grid. Export still uses ${ref.well} as the pattern template. Check ${ref.well} if you want to preview it on the plate layout.`,
-        fields: [{ label: "Reference well", id: "well" }, { label: "Wells to print", id: "bulk-well-grid" }],
-        focusId: "bulk-well-grid",
-        blocking: false,
-      }));
-    }
-    issues.push(...issuesForBulkWellOutsideFailures(collectBulkWellOutsideFailures(wells)));
-  } else if (isCirclePrintEnabled()) {
-    const params = collectCircleParams();
-    const err = validateCircleParams(params);
-    if (err) issues.push(issueForValidationError(err, { circle: true }));
-  } else if (!pass1Err) {
-    const print1 = collectPrint1Params();
-    const err = validatePrintParams(print1);
-    if (err) issues.push(issueForValidationError(err, { focusId: "start-x" }));
-  }
-
-  const seen = new Set();
-  return issues.filter((issue) => {
-    if (seen.has(issue.id)) return false;
-    seen.add(issue.id);
-    return true;
-  });
-}
-
-function notifyPreviewIssues() {
-  const issues = collectUserIssues();
-  const key = issues.map((issue) => issue.id).sort().join("|");
-  if (!issues.length) dismissedPreviewIssueKey = "";
-  if (!previewIssueBootstrapped) {
-    previewIssueBootstrapped = true;
-    lastPreviewIssueKey = key;
-    return;
-  }
-  lastPreviewIssueKey = key;
-  if (!key || key === dismissedPreviewIssueKey) return;
-  showUserIssuesModal(issues, { source: "preview" });
-}
-
 function initUserIssueModal() {
   if (!el.userIssueModal) return;
-  el.userIssueModalDismiss.addEventListener("click", () => {
-    hideUserIssueModal(lastPreviewIssueKey);
-  });
-  el.userIssueModalBackdrop.addEventListener("click", () => {
-    hideUserIssueModal(lastPreviewIssueKey);
-  });
+  el.userIssueModalDismiss.addEventListener("click", hideUserIssueModal);
+  el.userIssueModalBackdrop.addEventListener("click", hideUserIssueModal);
   el.userIssueModalFocus.addEventListener("click", () => {
-    hideUserIssueModal(lastPreviewIssueKey);
+    hideUserIssueModal();
     focusIssueField(modalFocusTargetId);
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && el.userIssueModal && !el.userIssueModal.hidden) {
-      hideUserIssueModal(lastPreviewIssueKey);
+      hideUserIssueModal();
     }
   });
 }
@@ -493,7 +361,41 @@ const PRINT2_TOOLPATH_COLOR = "rgba(147, 51, 234, 0.55)";
 let dotPositions = [];
 let bulkDetailDotPositions = [];
 let ecalcOpen = true;
-let print2PassCustomized = false;
+
+const ExtraPrintUI = window.ExtraPrintUI;
+
+const EXTRA_PASS_PALETTE = [
+  { dot: "#9333EA", toolpath: "rgba(147, 51, 234, 0.55)" },
+  { dot: "#ea580c", toolpath: "rgba(234, 88, 12, 0.55)" },
+  { dot: "#0891b2", toolpath: "rgba(8, 145, 178, 0.55)" },
+  { dot: "#be185d", toolpath: "rgba(190, 24, 93, 0.55)" },
+  { dot: "#65a30d", toolpath: "rgba(101, 163, 13, 0.55)" },
+  { dot: "#7c3aed", toolpath: "rgba(124, 58, 237, 0.55)" },
+  { dot: "#0d9488", toolpath: "rgba(13, 148, 136, 0.55)" },
+  { dot: "#c026d3", toolpath: "rgba(192, 38, 211, 0.55)" },
+  { dot: "#ca8a04", toolpath: "rgba(202, 138, 4, 0.55)" },
+];
+
+function extraPassColors(printNum) {
+  const idx = Math.max(0, printNum - 2);
+  return EXTRA_PASS_PALETTE[idx % EXTRA_PASS_PALETTE.length];
+}
+
+function getExtraPassList() {
+  return ExtraPrintUI?.getPassList?.() || [2];
+}
+
+function print2FieldTarget() {
+  return ExtraPrintUI?.fieldTarget?.(2) || {};
+}
+
+function getPrint2Mode() {
+  return ExtraPrintUI?.getMode?.(2) || "same";
+}
+
+function isPrint2OffsetMode() {
+  return isSecondPassEnabled() && ExtraPrintUI?.isOffsetEnabled?.(2);
+}
 
 function setPreviewMeta(text) {
   const passWarn = getActivePassPreviewWarning();
@@ -507,12 +409,14 @@ function getActivePassPreviewWarning() {
   if (validatePassSettings(print1FieldTarget())) {
     return "Pass settings incomplete";
   }
-  if (isSecondPassEnabled()) {
-    if (validatePassSettings(print2FieldTarget())) {
-      return "Print 2 pass settings incomplete";
+  if (!isSecondPassEnabled()) return "";
+  for (const printNum of getExtraPassList()) {
+    const fields = ExtraPrintUI.fieldTarget(printNum);
+    if (validatePassSettings(fields)) {
+      return `Print ${printNum} pass settings incomplete`;
     }
-    if (el.p2AngleOffset.checked && validateAngleOffset()) {
-      return "Y offset settings incomplete";
+    if (ExtraPrintUI.isOffsetEnabled(printNum) && validateAngleOffsetFor(printNum)) {
+      return `Print ${printNum} Y offset settings incomplete`;
     }
   }
   return "";
@@ -603,57 +507,89 @@ function print1FieldTarget() {
   };
 }
 
-function print2FieldTarget() {
-  return {
-    startX: el.p2startX,
-    startY: el.p2startY,
-    dots: el.p2dots,
-    perRow: el.p2perRow,
-    rows: el.p2rows,
-    spacingX: el.p2spacingX,
-    spacingY: el.p2spacingY,
-    lowerZ: el.p2lowerZ,
-    upperZ: el.p2upperZ,
-    extrusionE: el.p2extrusionE,
-  };
-}
-
 function setDefaultsFromCurrentWell() {
   applyWellDefaults(print1FieldTarget(), el.well.value);
 }
 
+function setExtraPrintDefaults(printNum) {
+  const fields = ExtraPrintUI.fieldTarget(printNum);
+  if (!fields?.startX) return;
+  applyWellDefaults(fields, el.well.value);
+  ExtraPrintUI.clearPassCustomized(printNum);
+  syncExtraPrintPassFromPrint1(printNum);
+}
+
+function setAllExtraPrintDefaults() {
+  getExtraPassList().forEach((n) => setExtraPrintDefaults(n));
+}
+
 function setPrint2Defaults() {
-  applyWellDefaults(print2FieldTarget(), el.well.value);
-  resetPrint2PassCustomized();
-  syncPrint2PassFromPrint1();
+  setExtraPrintDefaults(2);
 }
 
-function resetPrint2PassCustomized() {
-  print2PassCustomized = false;
+function isKeepMultiPatternMetricsEnabled() {
+  return isSecondPassEnabled() && Boolean(el.keepMultiPatternMetrics?.checked);
 }
 
-function markPrint2PassCustomized() {
-  print2PassCustomized = true;
+function translatePatternStartForWellChange(fields, fromWell, toWell) {
+  if (!fields?.startX || !fields?.startY) return;
+  const startX = parsePatternFloat(fields.startX.value);
+  const startY = parsePatternFloat(fields.startY.value);
+  const [sx, sy] = translateStartForWell(fromWell, toWell, startX, startY);
+  fields.startX.value = sx.toFixed(2);
+  fields.startY.value = sy.toFixed(2);
 }
 
-function syncPrint2PassFromPrint1() {
-  el.p2lowerZ.value = el.lowerZ.value;
-  el.p2upperZ.value = el.upperZ.value;
-  el.p2extrusionE.value = el.extrusionE.value;
-}
+function applyMultiPatternMetricsWellChange(fromWell, toWell) {
+  translatePatternStartForWellChange(print1FieldTarget(), fromWell, toWell);
+  syncGridDotsFromLayout(el.dots, el.perRow, el.rows);
 
-function applyPrint2PassSettings(params) {
-  const p2 = print2FieldTarget();
-  return GcodeCore.applyPrint2PassSettings(params, {
-    lowerZ: p2.lowerZ.value,
-    upperZ: p2.upperZ.value,
-    extrusionE: p2.extrusionE.value,
+  getExtraPassList().forEach((printNum) => {
+    const fields = ExtraPrintUI.fieldTarget(printNum);
+    if (!fields) return;
+    const offsetOn = ExtraPrintUI.isOffsetEnabled(printNum);
+    const different = ExtraPrintUI.getMode(printNum) === "different";
+    if (!offsetOn && different) {
+      translatePatternStartForWellChange(fields, fromWell, toWell);
+      if (fields.dots && fields.perRow && fields.rows) {
+        syncGridDotsFromLayout(fields.dots, fields.perRow, fields.rows);
+      }
+    }
   });
 }
 
-function getPrint2Mode() {
-  const selected = document.querySelector('input[name="print-2-mode"]:checked');
-  return selected ? selected.value : "same";
+function onMultiPatternWellChange(newWellKey) {
+  if (!isKeepMultiPatternMetricsEnabled()) {
+    setDefaultsFromCurrentWell();
+    if (isSecondPassEnabled()) setAllExtraPrintDefaults();
+    multiPatternLastWell = newWellKey;
+    return;
+  }
+  if (multiPatternLastWell && multiPatternLastWell !== newWellKey) {
+    applyMultiPatternMetricsWellChange(multiPatternLastWell, newWellKey);
+  }
+  multiPatternLastWell = newWellKey;
+}
+
+function syncExtraPrintPassFromPrint1(printNum) {
+  const fields = ExtraPrintUI.fieldTarget(printNum);
+  if (!fields?.lowerZ) return;
+  fields.lowerZ.value = el.lowerZ.value;
+  fields.upperZ.value = el.upperZ.value;
+  fields.extrusionE.value = el.extrusionE.value;
+}
+
+function applyExtraPrintPassSettings(params, printNum) {
+  const fields = ExtraPrintUI.fieldTarget(printNum);
+  return GcodeCore.applyPrint2PassSettings(params, {
+    lowerZ: fields.lowerZ.value,
+    upperZ: fields.upperZ.value,
+    extrusionE: fields.extrusionE.value,
+  });
+}
+
+function applyPrint2PassSettings(params) {
+  return applyExtraPrintPassSettings(params, 2);
 }
 
 function getMultiPrintFileNameOptions() {
@@ -675,8 +611,13 @@ function prepareExportState() {
   syncWellNumberFromDropdown();
   if (isCirclePrintEnabled()) return;
   syncGridDotsFromLayout(el.dots, el.perRow, el.rows);
-  if (isSecondPassEnabled() && getPrint2Mode() === "different" && !el.p2AngleOffset.checked) {
-    syncGridDotsFromLayout(el.p2dots, el.p2perRow, el.p2rows);
+  if (isSecondPassEnabled()) {
+    getExtraPassList().forEach((printNum) => {
+      if (ExtraPrintUI.getMode(printNum) === "different" && !ExtraPrintUI.isOffsetEnabled(printNum)) {
+        const fields = ExtraPrintUI.fieldTarget(printNum);
+        syncGridDotsFromLayout(fields.dots, fields.perRow, fields.rows);
+      }
+    });
   }
 }
 
@@ -710,8 +651,8 @@ function collectPrint1Params() {
   return collectPrintParams(print1FieldTarget());
 }
 
-function collectPrint2PatternParams() {
-  const fields = print2FieldTarget();
+function collectExtraPrintPatternParams(printNum) {
+  const fields = ExtraPrintUI.fieldTarget(printNum);
   const print1 = collectPrint1Params();
   const pass = readPassFieldValues(fields);
   return {
@@ -730,32 +671,37 @@ function collectPrint2PatternParams() {
   };
 }
 
-function getAngleOffsetSettings() {
-  const min = parseEcalcFloat(el.p2OffsetMin.value);
-  const max = parseEcalcFloat(el.p2OffsetMax.value);
+function getAngleOffsetSettingsFor(printNum) {
+  const fields = ExtraPrintUI.fieldTarget(printNum);
+  const min = parseEcalcFloat(fields.offsetMin?.value);
+  const max = parseEcalcFloat(fields.offsetMax?.value);
   const valid = validateAngleOffsetValues(min, max) === null;
   return {
-    enabled: el.p2AngleOffset.checked,
+    enabled: ExtraPrintUI.isOffsetEnabled(printNum),
     min: valid ? min : 0,
     max: valid ? max : 0,
     minParsed: min,
     maxParsed: max,
     valid,
-    sign: el.p2OffsetSide.value === "negative" ? -1 : 1,
+    sign: fields.offsetSide?.value === "negative" ? -1 : 1,
   };
 }
 
-function buildAngledPrint2Dots(print2Params) {
-  const settings = getAngleOffsetSettings();
+function getAngleOffsetSettings() {
+  return getAngleOffsetSettingsFor(2);
+}
+
+function buildAngledPrintDots(printNum, printParams) {
+  const settings = getAngleOffsetSettingsFor(printNum);
   if (!settings.valid) return null;
 
   const print1 = collectPrint1Params();
   const print1Dots = computeGridDotsFromParams(print1);
-  if (!print1Dots.length) return computeGridDotsFromParams(print2Params);
+  if (!print1Dots.length) return computeGridDotsFromParams(printParams);
 
   const baseDots = print1Dots.map((dot) => ({ ...dot }));
   const { min, max, sign } = settings;
-  const perRow = print2Params.perRow > 0 ? print2Params.perRow : print1.perRow;
+  const perRow = printParams.perRow > 0 ? printParams.perRow : print1.perRow;
   return applyProgressiveYOffset(baseDots, print1Dots, perRow, min, max, sign);
 }
 
@@ -922,31 +868,35 @@ function buildBulkCombinedGcode(wells) {
 
 function setAppMode(tabId) {
   document.body.dataset.appMode = tabId;
-  if (tabId === "multi-print" && !print2PassCustomized) {
-    syncPrint2PassFromPrint1();
+  if (tabId === "multi-print") {
+    getExtraPassList().forEach((printNum) => {
+      if (!ExtraPrintUI.isPassCustomized(printNum)) {
+        syncExtraPrintPassFromPrint1(printNum);
+      }
+    });
   }
   updateModeUi();
   drawPreview();
 }
 
-function collectPrint2Params() {
+function collectExtraPrintParams(printNum) {
   if (!isSecondPassEnabled()) return null;
 
-  const offsetOn = getAngleOffsetSettings().enabled;
-  const mode = getPrint2Mode();
+  const offsetOn = ExtraPrintUI.isOffsetEnabled(printNum);
+  const mode = ExtraPrintUI.getMode(printNum);
   let params;
   if (offsetOn) {
     params = collectPrint1Params();
   } else if (mode === "same") {
     params = collectPrint1Params();
   } else {
-    params = collectPrint2PatternParams();
+    params = collectExtraPrintPatternParams(printNum);
   }
 
-  params = applyPrint2PassSettings(params);
+  params = applyExtraPrintPassSettings(params, printNum);
 
   if (offsetOn) {
-    const customDots = buildAngledPrint2Dots(params);
+    const customDots = buildAngledPrintDots(printNum, params);
     if (!customDots) {
       return { ...params, offsetInvalid: true, customDots: null };
     }
@@ -959,12 +909,31 @@ function collectPrint2Params() {
   return params;
 }
 
-function validateAngleOffset() {
-  if (!isSecondPassEnabled() || !el.p2AngleOffset.checked) return null;
+function collectPrint2Params() {
+  return collectExtraPrintParams(2);
+}
+
+function collectAllExtraPrintParams() {
+  return getExtraPassList()
+    .map((printNum) => ({
+      printNum,
+      params: collectExtraPrintParams(printNum),
+      sameMode: ExtraPrintUI.getMode(printNum) === "same",
+    }))
+    .filter((entry) => entry.params && !entry.params.offsetInvalid);
+}
+
+function validateAngleOffsetFor(printNum) {
+  if (!isSecondPassEnabled() || !ExtraPrintUI.isOffsetEnabled(printNum)) return null;
+  const fields = ExtraPrintUI.fieldTarget(printNum);
   return validateAngleOffsetValues(
-    parseEcalcFloat(el.p2OffsetMin.value),
-    parseEcalcFloat(el.p2OffsetMax.value)
+    parseEcalcFloat(fields.offsetMin?.value),
+    parseEcalcFloat(fields.offsetMax?.value)
   );
+}
+
+function validateAngleOffset() {
+  return validateAngleOffsetFor(2);
 }
 
 function paramsToGcode(params) {
@@ -988,42 +957,36 @@ function buildCombinedGcode(print1, print2, sameMode) {
   return coreBuildCombinedGcode(print1, print2, sameMode, paramsToGcode);
 }
 
-function isPrint2OffsetMode() {
-  return isSecondPassEnabled() && el.p2AngleOffset.checked;
+function buildCombinedGcodeAllPasses() {
+  const print1 = collectPrint1Params();
+  const extras = collectAllExtraPrintParams().map((entry) => ({
+    params: entry.params,
+    sameMode: entry.sameMode,
+    passNum: entry.printNum,
+  }));
+  return buildCombinedMultiGcode(print1, extras, paramsToGcode);
 }
 
 function updateModeUi() {
   const multi = isSecondPassEnabled();
   const bulk = isBulkPrintEnabled();
   const circle = isCirclePrintEnabled();
-  const offsetOn = isPrint2OffsetMode();
 
-  const differentMode = getPrint2Mode() === "different";
-
-  el.p2AngleControls.hidden = !multi || !el.p2AngleOffset.checked;
   if (el.print1PatternNote) el.print1PatternNote.hidden = !multi;
-  if (el.p2OffsetUsesPrint1Note) el.p2OffsetUsesPrint1Note.hidden = !offsetOn;
-  if (el.print2ModeFieldset) {
-    el.print2ModeFieldset.disabled = offsetOn;
-    el.print2ModeFieldset.classList.toggle("disabled", offsetOn);
-  }
-  el.print2Controls.hidden = !multi || !differentMode;
-  if (el.print2PatternFields) {
-    el.print2PatternFields.hidden = !multi || !differentMode || offsetOn;
-  }
-  if (el.print2PassFields) {
-    el.print2PassFields.hidden = !multi;
+  if (multi && ExtraPrintUI) {
+    ExtraPrintUI.updateAllCardVisibility();
+    ExtraPrintUI.syncPreviewTargetOptions(el.previewTarget);
   }
 
   el.save.hidden = multi || bulk || circle;
   el.savePrint1.hidden = !multi;
-  el.savePrint2.hidden = !multi;
   el.saveCombined.hidden = !multi;
   if (el.saveBulkCombined) el.saveBulkCombined.hidden = !bulk;
   if (el.saveBulkIndividual) el.saveBulkIndividual.hidden = !bulk;
   if (el.saveCircle) el.saveCircle.hidden = !circle;
 
   el.previewTargetWrap.hidden = !multi;
+  syncEcalcApplyButtons();
 
   if (el.wellSelectLabel) {
     el.wellSelectLabel.textContent = bulk
@@ -1059,8 +1022,12 @@ function syncGridDotsFromLayout(dotsEl, perRowEl, rowsEl) {
 }
 
 function onPrint1PassInput() {
-  if (isSecondPassEnabled() && !print2PassCustomized) {
-    syncPrint2PassFromPrint1();
+  if (isSecondPassEnabled()) {
+    getExtraPassList().forEach((printNum) => {
+      if (!ExtraPrintUI.isPassCustomized(printNum)) {
+        syncExtraPrintPassFromPrint1(printNum);
+      }
+    });
   }
   drawPreview();
 }
@@ -1325,10 +1292,10 @@ function measuredVerticalSpacing(positions, perRow, rows) {
   return { topDot, bottomDot, distMm };
 }
 
-function print2PatternDiffersFromPrint1(print1, print2) {
+function extraPrintPatternDiffersFromPrint1(print1, print2, printNum) {
   if (!print2) return false;
   if (print2.customDots && print2.customDots.length) return true;
-  return getPrint2Mode() === "different";
+  return ExtraPrintUI.getMode(printNum) === "different";
 }
 
 function drawToolpath(ctx, dotPositions, dotR, strokeColor = PRINT1_TOOLPATH_COLOR) {
@@ -1392,7 +1359,7 @@ function partitionOverlappingDots(positions1, positions2) {
   return { only1, only2, overlaps };
 }
 
-function drawPreviewLegend(ctx, cw, ch, { showPrint2 = false, showOverlap = false, showOutside = false } = {}) {
+function drawPreviewLegend(ctx, cw, ch, { extraPassNums = [], showOverlap = false, showOutside = false } = {}) {
   const margin = 12;
   const rowHeight = 16;
   const lineLen = 22;
@@ -1404,11 +1371,11 @@ function drawPreviewLegend(ctx, cw, ch, { showPrint2 = false, showOverlap = fals
     { type: "line", label: "Tool path", color: PRINT1_TOOLPATH_COLOR },
     { type: "dot", label: "Print 1", color: PRINT1_DOT_COLOR },
   ];
-  if (showPrint2) {
-    rows.push({ type: "dot", label: "Print 2", color: PRINT2_DOT_COLOR });
-  }
+  extraPassNums.forEach((n) => {
+    rows.push({ type: "dot", label: `Print ${n}`, color: extraPassColors(n).dot });
+  });
   if (showOverlap) {
-    rows.push({ type: "dot", label: "Same XY (2 passes)", color: OVERLAP_DOT_COLOR });
+    rows.push({ type: "dot", label: "Same XY (passes)", color: OVERLAP_DOT_COLOR });
   }
   if (showOutside) {
     rows.push({ type: "dot", label: "Outside well", color: OUTSIDE_WELL_DOT_COLOR });
@@ -1783,7 +1750,6 @@ function drawBulkPreview() {
     ctx.fillText("Select one or more wells to preview", cw / 2, ch / 2);
     setPreviewMeta("24-well plate | No wells selected");
     drawBulkDetailPreview();
-    notifyPreviewIssues();
     return;
   }
 
@@ -1851,7 +1817,6 @@ function drawBulkPreview() {
     `Ø ${WELL_DIAM_MM.toFixed(1)} mm${bulkOutsideNote}`,
   ].join(" | "));
   drawBulkDetailPreview();
-  notifyPreviewIssues();
 }
 
 function drawCirclePreview() {
@@ -1929,7 +1894,6 @@ function drawCirclePreview() {
     `${positions.length} dots @ ${params.startAngleDeg.toFixed(0)}° start`,
     `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideWellMetaNote(positions)}`,
   ].join(" | "));
-  notifyPreviewIssues();
 }
 
 function drawPreview() {
@@ -1944,12 +1908,20 @@ function drawPreview() {
   }
 
   const print1 = collectPrint1Params();
-  const showPrint2 = isSecondPassEnabled();
-  const print2 = showPrint2 ? collectPrint2Params() : null;
+  const multi = isSecondPassEnabled();
   const view = getPreviewView();
-  const print2Ready = print2 && !print2.offsetInvalid;
   const showPrint1Layer = view === "1" || view === "both";
-  const showPrint2Layer = showPrint2 && print2Ready && (view === "2" || view === "both");
+
+  const extraLayers = multi
+    ? getExtraPassList()
+        .map((printNum) => {
+          const params = collectExtraPrintParams(printNum);
+          if (!params) return null;
+          return { printNum, params };
+        })
+        .filter(Boolean)
+    : [];
+  const drawableExtra = extraLayers.filter((layer) => !layer.params.offsetInvalid);
 
   const refWell = DEFAULT_24WELL_CENTERS[print1.well] || DEFAULT_24WELL_CENTERS.A1;
   const refCx = refWell[0];
@@ -1971,14 +1943,17 @@ function drawPreview() {
   const print1Data = computeDotPositions(
     print1, refCx, refCy, pxCenterX, pxCenterY, scale, rPx, dotR
   );
-  const print2Data = print2Ready
-    ? computeDotPositions(print2, refCx, refCy, pxCenterX, pxCenterY, scale, rPx, dotR)
-    : null;
 
-  const showBothLayers = view === "both" && showPrint1Layer && showPrint2Layer && print2Data;
-  const overlapSplit = showBothLayers
-    ? partitionOverlappingDots(print1Data.positions, print2Data.positions)
-    : null;
+  const layersWithData = drawableExtra.map((layer) => ({
+    ...layer,
+    data: computeDotPositions(
+      layer.params, refCx, refCy, pxCenterX, pxCenterY, scale, rPx, dotR
+    ),
+  }));
+
+  const visibleExtra = layersWithData.filter(
+    (layer) => view === "both" || view === String(layer.printNum)
+  );
 
   ctx.clearRect(0, 0, cw, ch);
   dotPositions = [];
@@ -1987,57 +1962,44 @@ function drawPreview() {
   ctx.lineWidth = 2;
   drawWellOutline(ctx, print1.well, refCx, refCy, pxCenterX, pxCenterY, scale, rPx);
 
-  if (showBothLayers && overlapSplit) {
-    const { only1, only2, overlaps } = overlapSplit;
+  const drawPassLayer = (data, printNum, colors) => {
+    data.positions.forEach((dot) => {
+      dotPositions.push({ ...dot, printNum });
+    });
+    drawToolpath(ctx, data.positions, dotR, colors.toolpath);
+    drawPrintDots(ctx, data.positions, colors.dot, dotR);
+  };
 
-    drawToolpath(ctx, print1Data.positions, dotR, PRINT1_TOOLPATH_COLOR);
-    drawToolpath(ctx, print2Data.positions, dotR, PRINT2_TOOLPATH_COLOR);
-
-    drawPrintDots(ctx, only1, PRINT1_DOT_COLOR, dotR);
-    drawPrintDots(ctx, only2, PRINT2_DOT_COLOR, dotR);
-    drawPrintDots(ctx, overlaps, OVERLAP_DOT_COLOR, dotR);
-
-    only1.forEach((dot) => dotPositions.push({ ...dot, printNum: 1 }));
-    only2.forEach((dot) => dotPositions.push({ ...dot, printNum: 2 }));
-    overlaps.forEach((dot) => dotPositions.push({ ...dot, printNum: "both" }));
-
+  if (showPrint1Layer) {
+    drawPassLayer(print1Data, 1, { dot: PRINT1_DOT_COLOR, toolpath: PRINT1_TOOLPATH_COLOR });
     drawStartArrow(ctx, print1Data.positions, dotR);
-  } else {
-    if (showPrint1Layer) {
-      print1Data.positions.forEach((dot) => {
-        dotPositions.push({ ...dot, printNum: 1 });
-      });
-      drawToolpath(ctx, print1Data.positions, dotR, PRINT1_TOOLPATH_COLOR);
-      drawPrintDots(ctx, print1Data.positions, PRINT1_DOT_COLOR, dotR);
-      drawStartArrow(ctx, print1Data.positions, dotR);
-    }
-
-    if (showPrint2Layer && print2Data) {
-      print2Data.positions.forEach((dot) => {
-        dotPositions.push({ ...dot, printNum: 2 });
-      });
-      drawToolpath(ctx, print2Data.positions, dotR, PRINT2_TOOLPATH_COLOR);
-      drawPrintDots(ctx, print2Data.positions, PRINT2_DOT_COLOR, dotR);
-      if (!showPrint1Layer) drawStartArrow(ctx, print2Data.positions, dotR);
-    }
   }
+
+  visibleExtra.forEach((layer) => {
+    const colors = extraPassColors(layer.printNum);
+    drawPassLayer(layer.data, layer.printNum, colors);
+    if (!showPrint1Layer && layer === visibleExtra[0]) {
+      drawStartArrow(ctx, layer.data.positions, dotR);
+    }
+  });
 
   const spacingAnchors = [];
   if (showPrint1Layer) spacingAnchors.push(...print1Data.positions);
-  if (showPrint2Layer && print2Data) spacingAnchors.push(...print2Data.positions);
-  if (spacingAnchors.length) {
-    const usePrint2Spacing = print2Data && (
-      view === "2"
-      || (view === "both" && print2PatternDiffersFromPrint1(print1, print2))
-    );
-    const spacingPositions = usePrint2Spacing ? print2Data.positions : print1Data.positions;
-    const spacingCfg = usePrint2Spacing ? print2 : print1;
-    const spacingRows = usePrint2Spacing ? print2Data.rows : print1Data.rows;
+  visibleExtra.forEach((layer) => spacingAnchors.push(...layer.data.positions));
+
+  let spacingLayer = null;
+  if (view !== "1" && visibleExtra.length) {
+    spacingLayer = visibleExtra[visibleExtra.length - 1];
+  } else if (showPrint1Layer) {
+    spacingLayer = { params: print1, data: print1Data };
+  }
+
+  if (spacingAnchors.length && spacingLayer) {
     drawSpacingIndicators(
       ctx,
-      spacingPositions,
-      spacingCfg.perRow,
-      spacingRows,
+      spacingLayer.data.positions,
+      spacingLayer.params.perRow,
+      spacingLayer.data.rows,
       dotR,
       spacingAnchors
     );
@@ -2048,42 +2010,44 @@ function drawPreview() {
 
   const legendPositions = [];
   if (showPrint1Layer) legendPositions.push(...print1Data.positions);
-  if (showPrint2Layer && print2Data) legendPositions.push(...print2Data.positions);
+  visibleExtra.forEach((layer) => legendPositions.push(...layer.data.positions));
   const outsideNote = outsideWellMetaNote(legendPositions);
 
-  const sameModeRepeat = showPrint2 && print2Ready && getPrint2Mode() === "same"
-    && !print2.customDots && passSettingsMatch(print1, print2);
+  const passSummaries = [
+    formatPassSummary(print1, "Pass 1"),
+    ...visibleExtra.map((layer) =>
+      formatPassSummary(layer.params, `Pass ${layer.printNum}`)
+    ),
+  ];
+  const passMeta = multi && visibleExtra.length ? passSummaries.join(" | ") : "";
+
   drawPreviewLegend(ctx, cw, ch, {
-    showPrint2,
-    showOverlap: showBothLayers && overlapSplit && overlapSplit.overlaps.length > 0,
+    extraPassNums: visibleExtra.map((l) => l.printNum),
     showOutside: legendPositions.some((dot) => dot.outsideWell),
   });
 
-  const passMeta = showPrint2 && print2Ready
-    ? `${formatPassSummary(print1, "Pass 1")} | ${formatPassSummary(print2, "Pass 2")}${sameModeRepeat ? " | Export runs identical XY twice" : ""}`
-    : "";
-
-  if (showPrint2 && print2 && print2Data) {
-    const wellLabel = `Well ${print1.well}`;
-    if (view === "both") {
-      setPreviewMeta([
-        `${wellLabel} | Pass 1 grid ${formatCoordMm(print1Data.gridWmm)} × ${formatCoordMm(print1Data.gridHmm)} mm`,
-        `Pass 2 grid ${formatCoordMm(print2Data.gridWmm)} × ${formatCoordMm(print2Data.gridHmm)} mm`,
-        passMeta,
-        `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`,
-      ].filter(Boolean).join(" | "));
-    } else if (view === "2") {
-      setPreviewMeta(`${wellLabel} | Pass 2 grid ${formatCoordMm(print2Data.gridWmm)} × ${formatCoordMm(print2Data.gridHmm)} mm | ${passMeta} | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`);
-    } else {
-      setPreviewMeta(`${wellLabel} | Pass 1 grid ${formatCoordMm(print1Data.gridWmm)} × ${formatCoordMm(print1Data.gridHmm)} mm | ${passMeta} | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`);
-    }
-  } else if (showPrint2 && print2?.offsetInvalid) {
-    setPreviewMeta(`Well ${print1.well} | Pass 2 hidden until Y offset min/max are valid | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`);
+  const wellLabel = `Well ${print1.well}`;
+  const invalidExtra = extraLayers.find((l) => l.params?.offsetInvalid);
+  if (invalidExtra && (view === "both" || view === String(invalidExtra.printNum))) {
+    setPreviewMeta(
+      `${wellLabel} | Print ${invalidExtra.printNum} hidden until Y offset min/max are valid | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`
+    );
+  } else if (view === "both" && multi) {
+    setPreviewMeta([
+      `${wellLabel} | ${passSummaries.length} pass(es)`,
+      passMeta,
+      `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`,
+    ].filter(Boolean).join(" | "));
+  } else if (view !== "1" && visibleExtra[0]) {
+    const layer = visibleExtra[0];
+    setPreviewMeta(
+      `${wellLabel} | Pass ${layer.printNum} grid ${formatCoordMm(layer.data.gridWmm)} × ${formatCoordMm(layer.data.gridHmm)} mm | ${passMeta} | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`
+    );
   } else {
-    setPreviewMeta(`Well Ø ${WELL_DIAM_MM.toFixed(1)} mm | Grid ${formatCoordMm(print1Data.gridWmm)} x ${formatCoordMm(print1Data.gridHmm)} mm${outsideNote}`);
+    setPreviewMeta(
+      `${wellLabel} | Pass 1 grid ${formatCoordMm(print1Data.gridWmm)} × ${formatCoordMm(print1Data.gridHmm)} mm | ${passMeta} | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`
+    );
   }
-
-  notifyPreviewIssues();
 }
 
 function onPrint1GridLayoutInput() {
@@ -2095,8 +2059,9 @@ function onPrint1GridLayoutInput() {
   drawPreview();
 }
 
-function onPrint2GridLayoutInput() {
-  syncGridDotsFromLayout(el.p2dots, el.p2perRow, el.p2rows);
+function onExtraPrintGridLayoutInput(printNum) {
+  const fields = ExtraPrintUI.fieldTarget(printNum);
+  syncGridDotsFromLayout(fields.dots, fields.perRow, fields.rows);
   drawPreview();
 }
 
@@ -2200,35 +2165,36 @@ async function savePrint1Gcode() {
   await saveGcodeFile(paramsToGcode(print1), defaultMultiPrintSaveFileName(print1, "_print1"));
 }
 
-async function savePrint2Gcode() {
+async function saveExtraPrintGcode(printNum) {
   prepareExportState();
-  const passErr = validatePassSettings(print2FieldTarget());
+  const fields = ExtraPrintUI.fieldTarget(printNum);
+  const passErr = validatePassSettings(fields);
   if (passErr) {
-    reportSaveFailure(issueForPassSettings(passErr, "print2"), passErr);
+    reportSaveFailure(issueForPassSettings(passErr, `print${printNum}`), passErr);
     return;
   }
-  const print2 = collectPrint2Params();
+  const print2 = collectExtraPrintParams(printNum);
   if (print2?.offsetInvalid) {
-    const angleErr = validateAngleOffset() || "Error: Y offset settings are invalid.";
+    const angleErr = validateAngleOffsetFor(printNum) || "Error: Y offset settings are invalid.";
     reportSaveFailure(issueForAngleOffset(angleErr), angleErr);
     return;
   }
   const err2 = validatePrintParams(print2);
   if (err2) {
     reportSaveFailure(issueForValidationError(err2, {
-      print2: !el.p2AngleOffset.checked && getPrint2Mode() === "different",
-      focusId: el.p2AngleOffset.checked ? "p2-offset-max" : "p2-start-x",
+      printNum,
+      focusId: ExtraPrintUI.isOffsetEnabled(printNum) ? `p${printNum}-offset-max` : `p${printNum}-start-x`,
     }), err2);
     return;
   }
-  const errAngle = validateAngleOffset();
+  const errAngle = validateAngleOffsetFor(printNum);
   if (errAngle) {
     reportSaveFailure(issueForAngleOffset(errAngle), errAngle);
     return;
   }
   await saveGcodeFile(
     paramsToGcode(print2),
-    defaultMultiPrintSaveFileName(print2, "_print2")
+    defaultMultiPrintSaveFileName(print2, `_print${printNum}`)
   );
 }
 
@@ -2239,40 +2205,45 @@ async function saveCombinedGcode() {
     reportSaveFailure(issueForPassSettings(pass1Err, "print1"), pass1Err);
     return;
   }
-  const pass2Err = validatePassSettings(print2FieldTarget());
-  if (pass2Err) {
-    reportSaveFailure(issueForPassSettings(pass2Err, "print2"), pass2Err);
-    return;
-  }
   const print1 = collectPrint1Params();
-  const print2 = collectPrint2Params();
-  if (print2?.offsetInvalid) {
-    const angleErr = validateAngleOffset() || "Error: Y offset settings are invalid.";
-    reportSaveFailure(issueForAngleOffset(angleErr), angleErr);
-    return;
-  }
   const err1 = validatePrintParams(print1);
   if (err1) {
     reportSaveFailure(issueForValidationError(err1, { focusId: "start-x" }), err1);
     return;
   }
-  const err2 = validatePrintParams(print2);
-  if (err2) {
-    reportSaveFailure(issueForValidationError(err2, {
-      print2: !el.p2AngleOffset.checked && getPrint2Mode() === "different",
-      focusId: el.p2AngleOffset.checked ? "p2-offset-max" : "p2-start-x",
-    }), err2);
-    return;
+
+  for (const printNum of getExtraPassList()) {
+    const fields = ExtraPrintUI.fieldTarget(printNum);
+    const passErr = validatePassSettings(fields);
+    if (passErr) {
+      reportSaveFailure(issueForPassSettings(passErr, `print${printNum}`), passErr);
+      return;
+    }
+    const params = collectExtraPrintParams(printNum);
+    if (params?.offsetInvalid) {
+      const angleErr = validateAngleOffsetFor(printNum) || "Error: Y offset settings are invalid.";
+      reportSaveFailure(issueForAngleOffset(angleErr), angleErr);
+      return;
+    }
+    const errN = validatePrintParams(params);
+    if (errN) {
+      reportSaveFailure(issueForValidationError(errN, {
+        printNum,
+        focusId: ExtraPrintUI.isOffsetEnabled(printNum) ? `p${printNum}-offset-max` : `p${printNum}-start-x`,
+      }), errN);
+      return;
+    }
+    const errAngle = validateAngleOffsetFor(printNum);
+    if (errAngle) {
+      reportSaveFailure(issueForAngleOffset(errAngle), errAngle);
+      return;
+    }
   }
-  const errAngle = validateAngleOffset();
-  if (errAngle) {
-    reportSaveFailure(issueForAngleOffset(errAngle), errAngle);
-    return;
-  }
-  const sameMode = getPrint2Mode() === "same";
+
+  const passCount = getExtraPassList().length + 1;
   await saveGcodeFile(
-    buildCombinedGcode(print1, print2, sameMode),
-    defaultMultiPrintSaveFileName(print1, "_2pass")
+    buildCombinedGcodeAllPasses(),
+    defaultMultiPrintSaveFileName(print1, `_${passCount}pass`)
   );
 }
 
@@ -2487,76 +2458,66 @@ function initBulkPrint() {
   bindChange(el.bulkDetailWell, drawPreview);
 }
 
-function initMultiPrint() {
-  setPrint2Defaults();
-  updateModeUi();
+function snapExtraPrintToWell(printNum) {
+  const fields = ExtraPrintUI.fieldTarget(printNum);
+  const [sx, sy] = startPositionForCenterDotAtWellCenter(
+    el.well.value,
+    safeInt(fields.dots?.value),
+    safeInt(fields.perRow?.value),
+    safeFloat(fields.spacingX?.value),
+    safeFloat(fields.spacingY?.value)
+  );
+  fields.startX.value = sx.toFixed(2);
+  fields.startY.value = sy.toFixed(2);
+  drawPreview();
+}
 
-  document.querySelectorAll('input[name="print-2-mode"]').forEach((input) => {
-    input.addEventListener("change", () => {
+function initMultiPrint() {
+  if (!ExtraPrintUI || !el.extraPrintsContainer) return;
+
+  ExtraPrintUI.init(el.extraPrintsContainer, {
+    onChange: drawPreview,
+    onGridLayout: onExtraPrintGridLayoutInput,
+    onSyncPass: (printNum) => {
+      ExtraPrintUI.clearPassCustomized(printNum);
+      syncExtraPrintPassFromPrint1(printNum);
+      drawPreview();
+    },
+    onSnap: snapExtraPrintToWell,
+    onSavePass: saveExtraPrintGcode,
+    onRemove: (printNum) => {
+      if (ExtraPrintUI.removePass(printNum)) {
+        ExtraPrintUI.syncPreviewTargetOptions(el.previewTarget);
+        syncEcalcApplyButtons();
+        updateModeUi();
+        drawPreview();
+      }
+    },
+    onOffsetToggle: () => {
       updateModeUi();
       drawPreview();
-    });
+    },
   });
+
+  setAllExtraPrintDefaults();
+  ExtraPrintUI.syncPreviewTargetOptions(el.previewTarget);
+  updateModeUi();
 
   bindChange(el.previewTarget, drawPreview);
-
-  bindChange(el.p2AngleOffset, () => {
-    updateModeUi();
-    if (el.p2AngleOffset.checked) {
-      dismissedPreviewIssueKey = "";
-      showUserIssuesModal([createUserIssue({
-        id: "Y_OFFSET_MODE",
-        title: "Y offset uses Print 1 pattern",
-        message: "Same vs Different pattern is disabled while Y offset is on. Pass 2 dot positions come from Print 1 Start X/Y, dots, and spacing, with min/max Y offset applied per column. Edit Print 1 pattern fields and Y offset fields below.",
-        fields: [...GRID_PATTERN_FIELDS, ...Y_OFFSET_FIELDS],
-        focusId: "p2-offset-min",
-        blocking: false,
-      })], { source: "preview" });
+  bindClick(el.addExtraPrint, () => {
+    const added = ExtraPrintUI.addPass();
+    if (!added) {
+      el.saveStatus.textContent = `Maximum ${ExtraPrintUI.MAX_EXTRA_PASSES + 1} passes (Print 1 plus ${ExtraPrintUI.MAX_EXTRA_PASSES} extra).`;
+      return;
     }
+    setExtraPrintDefaults(added);
+    ExtraPrintUI.syncPreviewTargetOptions(el.previewTarget);
+    syncEcalcApplyButtons();
+    updateModeUi();
     drawPreview();
   });
-  [el.p2OffsetMin, el.p2OffsetMax].forEach((input) => {
-    input.addEventListener("input", drawPreview);
-  });
-  bindChange(el.p2OffsetSide, drawPreview);
-
-  el.p2snap.addEventListener("click", () => {
-    const [sx, sy] = startPositionForCenterDotAtWellCenter(
-      el.well.value,
-      safeInt(el.p2dots.value),
-      safeInt(el.p2perRow.value),
-      safeFloat(el.p2spacingX.value),
-      safeFloat(el.p2spacingY.value)
-    );
-    el.p2startX.value = sx.toFixed(2);
-    el.p2startY.value = sy.toFixed(2);
-    drawPreview();
-  });
-
-  [el.p2perRow, el.p2rows].forEach((input) => {
-    input.addEventListener("input", onPrint2GridLayoutInput);
-  });
-  [el.p2spacingX, el.p2spacingY, el.p2startX, el.p2startY].forEach((input) => {
-    input.addEventListener("input", drawPreview);
-  });
-
-  [el.p2lowerZ, el.p2upperZ, el.p2extrusionE].forEach((input) => {
-    input.addEventListener("input", () => {
-      markPrint2PassCustomized();
-      drawPreview();
-    });
-  });
-
-  if (el.p2syncPass) {
-    el.p2syncPass.addEventListener("click", () => {
-      resetPrint2PassCustomized();
-      syncPrint2PassFromPrint1();
-      drawPreview();
-    });
-  }
 
   bindClick(el.savePrint1, savePrint1Gcode);
-  bindClick(el.savePrint2, savePrint2Gcode);
   bindClick(el.saveCombined, saveCombinedGcode);
 }
 
@@ -2578,7 +2539,20 @@ function initTabs() {
   setAppMode(getAppMode());
 }
 
-function applyEcalcToExtrusion(targetPass) {
+function syncEcalcApplyButtons() {
+  if (!el.ecalcApplyExtra) return;
+  el.ecalcApplyExtra.innerHTML = "";
+  if (!isSecondPassEnabled() || !ExtraPrintUI) return;
+  getExtraPassList().forEach((printNum) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = `Apply E to Print ${printNum}`;
+    btn.addEventListener("click", () => applyEcalcToExtrusion("extra", printNum));
+    el.ecalcApplyExtra.appendChild(btn);
+  });
+}
+
+function applyEcalcToExtrusion(targetPass, printNum = 2) {
   const volUl = parseEcalcFloat(el.ecalcVolUl.value);
   const needleRatio = parseEcalcFloat(el.ecalcNeedleRatio.value);
   if (volUl === null || needleRatio === null) {
@@ -2595,11 +2569,16 @@ function applyEcalcToExtrusion(targetPass) {
     return;
   }
   const eVal = needleRatio * volUl;
-  const usePrint2 = targetPass === "print2";
-  const target = usePrint2 ? el.p2extrusionE : el.extrusionE;
-  target.value = formatExtrusionE(eVal);
-  if (usePrint2) markPrint2PassCustomized();
-  const passLabel = usePrint2 ? "Print 2" : "Print 1";
+  const useExtra = targetPass === "extra";
+  if (useExtra) {
+    const fields = ExtraPrintUI?.fieldTarget(printNum);
+    if (!fields?.extrusionE) return;
+    fields.extrusionE.value = formatExtrusionE(eVal);
+    ExtraPrintUI.setPassCustomized(printNum);
+  } else {
+    el.extrusionE.value = formatExtrusionE(eVal);
+  }
+  const passLabel = useExtra ? `Print ${printNum}` : "Print 1";
   el.saveStatus.textContent = `Applied E = ${formatExtrusionE(eVal)} to ${passLabel} extrusion field.`;
   drawPreview();
 }
@@ -2607,6 +2586,7 @@ function applyEcalcToExtrusion(targetPass) {
 function bootApp() {
   try {
     populateWells();
+    multiPatternLastWell = el.well.value;
     document.body.dataset.appMode = "standard";
     initUserIssueModal();
     initMultiPrint();
@@ -2625,20 +2605,30 @@ function bootApp() {
 bootApp();
 
 el.well.addEventListener("change", () => {
+  const newWellKey = el.well.value;
   syncWellNumberFromDropdown();
   if (isCirclePrintEnabled()) {
-    applyCircleDefaults(el.well.value);
+    applyCircleDefaults(newWellKey);
+  } else if (isSecondPassEnabled()) {
+    onMultiPatternWellChange(newWellKey);
   } else {
     setDefaultsFromCurrentWell();
   }
-  if (isSecondPassEnabled()) setPrint2Defaults();
-  if (el.bulkRefWellLabel) el.bulkRefWellLabel.textContent = el.well.value;
+  if (el.bulkRefWellLabel) el.bulkRefWellLabel.textContent = newWellKey;
   if (isBulkPrintEnabled()) {
     setBulkWellChecked(el.well.value, true);
     updateBulkSelectionCount();
   }
   drawPreview();
 });
+if (el.keepMultiPatternMetrics) {
+  el.keepMultiPatternMetrics.addEventListener("change", () => {
+    multiPatternLastWell = el.well.value;
+    el.saveStatus.textContent = el.keepMultiPatternMetrics.checked
+      ? `Pattern metrics will follow well changes from ${multiPatternLastWell} (offset from each well’s default start).`
+      : "";
+  });
+}
 el.snap.addEventListener("click", () => {
   const [sx, sy] = startPositionForCenterDotAtWellCenter(
     el.well.value,
@@ -2657,14 +2647,34 @@ el.reset.addEventListener("click", () => {
   } else {
     setDefaultsFromCurrentWell();
   }
-  setPrint2Defaults();
-  const sameModeInput = document.querySelector('input[name="print-2-mode"][value="same"]');
-  if (sameModeInput) sameModeInput.checked = true;
-  el.p2AngleOffset.checked = false;
-  el.p2OffsetMin.value = "0.1";
-  el.p2OffsetMax.value = "1";
-  el.p2OffsetSide.value = "positive";
+  if (ExtraPrintUI) {
+    ExtraPrintUI.resetPasses();
+    ExtraPrintUI.init(el.extraPrintsContainer, {
+      onChange: drawPreview,
+      onGridLayout: onExtraPrintGridLayoutInput,
+      onSyncPass: (printNum) => {
+        ExtraPrintUI.clearPassCustomized(printNum);
+        syncExtraPrintPassFromPrint1(printNum);
+        drawPreview();
+      },
+      onSnap: snapExtraPrintToWell,
+      onSavePass: saveExtraPrintGcode,
+      onRemove: (printNum) => {
+        if (ExtraPrintUI.removePass(printNum)) {
+          ExtraPrintUI.syncPreviewTargetOptions(el.previewTarget);
+          syncEcalcApplyButtons();
+          updateModeUi();
+          drawPreview();
+        }
+      },
+      onOffsetToggle: () => drawPreview(),
+    });
+    setAllExtraPrintDefaults();
+    ExtraPrintUI.syncPreviewTargetOptions(el.previewTarget);
+  }
   el.previewTarget.value = "both";
+  if (el.keepMultiPatternMetrics) el.keepMultiPatternMetrics.checked = false;
+  multiPatternLastWell = el.well.value;
   setAllBulkWellsChecked(false);
   setBulkWellChecked(el.well.value, true);
   updateBulkSelectionCount();
@@ -2694,9 +2704,6 @@ el.ecalcToggle.addEventListener("click", () => {
 });
 if (el.ecalcApplyP1) {
   el.ecalcApplyP1.addEventListener("click", () => applyEcalcToExtrusion("print1"));
-}
-if (el.ecalcApplyP2) {
-  el.ecalcApplyP2.addEventListener("click", () => applyEcalcToExtrusion("print2"));
 }
 
 function findClosestDot(canvasEl, positions, clientX, clientY, hitRadius = 15) {

@@ -2,7 +2,7 @@
 
 Desktop app for generating G-code for 24-well plate bioprinting, with live preview, multi-print, bulk print, and circle patterns.
 
-**Current release:** v2.0.17 · macOS (Intel + Apple Silicon)
+**Current release:** v2.0.18 · macOS (Intel + Apple Silicon)
 
 ## Download and run (other Macs)
 
@@ -35,11 +35,11 @@ The build is a **universal macOS app** (Apple Silicon and Intel). It is signed a
 ## Features
 
 - **Standard print** — Grid patterns with live well preview
-- **Multi print** — Two passes in the same well (same or different pattern, optional Y offset, separate Z/E per pass)
+- **Multi print** — Multiple passes in the same well (add Print 3+), same or different pattern, optional Y offset, separate Z/E per pass, optional keep-pattern-metrics when changing wells
 - **Bulk print** — One pattern applied across many wells
 - **Circle print** — Dots on a circle inside a well
-- **Validation** — Blocks save when dots fall outside the well or pass settings are incomplete; popups list which fields to fix
-- **E-value calculator** — Optional helper; apply to Print 1 or Print 2 extrusion fields
+- **Validation** — Save blocked only when you press Save and settings are invalid; modal lists fields to fix
+- **E-value calculator** — Optional helper; apply to Print 1 and each extra pass (Print 2, 3, …)
 - **Annotations** — Optional commented G-code for teaching/debugging
 
 ## Quick usage
@@ -100,7 +100,7 @@ Output: `dist-electron/G-Code Generator-*-mac.zip`
 Pushing a version tag triggers the GitHub Actions workflow (`.github/workflows/release-macos.yml`), which builds a universal zip, signs/notarizes when secrets are set, and uploads to Releases.
 
 ```bash
-git tag v2.0.17
+git tag v2.0.18
 git push origin main --tags
 ```
 
