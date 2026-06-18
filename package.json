@@ -30,6 +30,12 @@
       "category": "public.app-category.utilities",
       "target": [
         {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
           "target": "zip",
           "arch": [
             "universal"
@@ -47,7 +53,7 @@
     "url": "git+https://github.com/ariellewolter/GCODE-GUI-Electron.git"
   },
   "keywords": [],
-  "author": "",
+  "author": "Evonyx by Arielle Wolter",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {

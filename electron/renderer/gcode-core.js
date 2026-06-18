@@ -81,6 +81,15 @@
     return DEFAULT_24WELL_CENTERS[wellKey] || DEFAULT_24WELL_CENTERS.A1;
   }
 
+  function startPositionForCenterDotAtWellCenter(wellKey, numDots, dotsPerRow, spacingX, spacingY) {
+    const [wcx, wcy] = getWellCenterMm(wellKey);
+    if (dotsPerRow <= 0) return [wcx, wcy];
+    const rows = Math.ceil(numDots / dotsPerRow);
+    const centerCol = (dotsPerRow - 1) / 2;
+    const centerRow = (rows - 1) / 2;
+    return [wcx - centerCol * spacingX, wcy - centerRow * spacingY];
+  }
+
   function isDotInsideWellMm(absX, absY, wellKey) {
     const [cx, cy] = getWellCenterMm(wellKey);
     return Math.hypot(absX - cx, absY - cy) <= WELL_RADIUS_MM;
@@ -125,7 +134,7 @@
     if (!baseDots.length) return [];
     return baseDots.map((dot, i) => {
       const col = perRow > 0 ? i % perRow : 0;
-      const t = perRow > 1 ? col / (perRow - 1) : 0;
+      const t = perRow > 1 ? col / (perRow - 1) : 0.5;
       const dist = minDist + (maxDist - minDist) * t;
       const ref = print1Dots[Math.min(i, print1Dots.length - 1)] || dot;
       return { absX: ref.absX, absY: ref.absY + dist * sign };
@@ -164,6 +173,9 @@
     if (extrusion <= 0) {
       return "Error: Extrusion per dot (E) must be greater than 0.";
     }
+    if (upper <= lower) {
+      return "Error: Upper Z must be greater than Lower Z.";
+    }
     return null;
   }
 
@@ -189,15 +201,12 @@
     return validateDotsInsideWell(params);
   }
 
-  function validateAngleOffsetValues(min, max) {
-    if (min === null || max === null) {
-      return "Error: Min and max Y offset are required when Y offset is enabled.";
+  function validateAngleOffsetValues(firstCol, lastCol) {
+    if (firstCol === null || lastCol === null) {
+      return "Error: First- and last-column Y offsets are required when Y offset is enabled.";
     }
-    if (min < 0 || max < 0) {
+    if (firstCol < 0 || lastCol < 0) {
       return "Error: Y offset distances cannot be negative.";
-    }
-    if (min > max) {
-      return "Error: Min Y offset must be ≤ max Y offset.";
     }
     return null;
   }
@@ -236,8 +245,8 @@
   }
 
   function computeGridLayout(rawRows, rawPerRow) {
-    let rows = safeInt(rawRows);
-    let perRow = safeInt(rawPerRow);
+    let rows = Math.max(0, safeInt(rawRows));
+    let perRow = Math.max(0, safeInt(rawPerRow));
     if (rows > MAX_GRID_ROWS) rows = MAX_GRID_ROWS;
     if (perRow > MAX_GRID_PER_ROW) perRow = MAX_GRID_PER_ROW;
     let dots = rows > 0 && perRow > 0 ? rows * perRow : 0;
@@ -343,6 +352,7 @@
     parseEcalcFloat,
     parsePatternFloat,
     getWellCenterMm,
+    startPositionForCenterDotAtWellCenter,
     isDotInsideWellMm,
     computeGridDotsFromParams,
     resolveParamsDots,

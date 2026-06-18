@@ -79,8 +79,8 @@ def start_position_for_center_dot_at_well_center(well_key, num_dots, dots_per_ro
     if dots_per_row <= 0:
         return get_well_center_mm(well_key)
     rows = math.ceil(num_dots / dots_per_row)
-    center_col = (dots_per_row - 1) // 2
-    center_row = (rows - 1) // 2
+    center_col = (dots_per_row - 1) / 2
+    center_row = (rows - 1) / 2
     wcx, wcy = get_well_center_mm(well_key)
     start_x = wcx - center_col * spacing_x
     start_y = wcy - center_row * spacing_y
@@ -95,7 +95,7 @@ def show_about():
     messagebox.showinfo(
         "About G-code Generator",
         "G-code Generator v3.0 — Calibration & Zoom Edition\n"
-        "© 2025 Arielle Wolter\n\n"
+        "© 2025–2026 Evonyx by Arielle Wolter\n\n"
         "• Real Start X/Y preview movement\n"
         "• Zoom 50–200% live preview\n"
         "• Collapsible 24-well calibration (hard-coded, editable)\n"
@@ -387,6 +387,8 @@ def save_gcode():
             return messagebox.showerror("Error", "Z offsets cannot be negative.")
         if extrusion_e <= 0:
             return messagebox.showerror("Error", "Extrusion per dot (E) must be greater than 0.")
+        if uz <= lz:
+            return messagebox.showerror("Error", "Upper Z must be greater than Lower Z.")
 
         # --- NEW: Remember last directory ---
         initial_dir = load_last_path()

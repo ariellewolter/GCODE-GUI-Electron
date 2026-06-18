@@ -44,7 +44,6 @@
   }
 
   function buildCardMarkup(printNum) {
-    const canRemove = passNumbers.length > 1;
     const passLegend = printNum === 2 ? "Second pass G-code" : `Pass ${printNum} G-code`;
     const passNote =
       printNum === 2
@@ -54,7 +53,7 @@
       <div class="extra-print-card" id="extra-print-${printNum}" data-print-num="${printNum}">
         <div class="extra-print-card-header">
           <h2>Print ${printNum}</h2>
-          ${canRemove ? `<button type="button" class="extra-print-remove ws-choice-secondary" data-remove-print="${printNum}" aria-label="Remove Print ${printNum}">Remove</button>` : ""}
+          <button type="button" class="extra-print-remove ws-choice-secondary" data-remove-print="${printNum}" aria-label="Remove Print ${printNum}"${passNumbers.length <= 1 ? " hidden" : ""}>Remove</button>
         </div>
         <p class="note extra-print-note">${passNote}</p>
         <div class="print-2-options">
@@ -79,12 +78,13 @@
             </p>
             <div class="print-2-angle-controls" id="p${printNum}-angle-controls" hidden>
               <p class="note">
-                X stays on Print 1. Y offset steps across each row: first column min, last column max.
+                X stays on Print 1. Y offset steps across each row from the first column to the last.
                 Example (10 per row): dots 1, 11, 21 → +0.1 mm Y; dots 10, 20, 30 → +1.0 mm Y.
+                Use a larger first-column value than last to reverse the ramp.
               </p>
-              <label>Min Y offset (mm)</label>
+              <label>First column Y offset (mm)</label>
               <input id="p${printNum}-offset-min" type="number" step="0.01" value="0.1" />
-              <label>Max Y offset (mm)</label>
+              <label>Last column Y offset (mm)</label>
               <input id="p${printNum}-offset-max" type="number" step="0.01" value="1" />
               <label>Y offset direction</label>
               <select id="p${printNum}-offset-side">
@@ -159,6 +159,9 @@
     card.querySelectorAll(`input[name="print-${printNum}-mode"]`).forEach((input) => {
       input.addEventListener("change", () => {
         updateCardVisibility(printNum);
+        if (getMode(printNum) === "different") {
+          callbacks.onDifferentMode?.(printNum);
+        }
         callbacks.onChange?.();
       });
     });
@@ -275,6 +278,17 @@
     return true;
   }
 
+  function setMode(printNum, mode) {
+    const card = document.getElementById(`extra-print-${printNum}`);
+    const radio = card?.querySelector(`input[name="print-${printNum}-mode"][value="${mode}"]`);
+    if (radio) radio.checked = true;
+    updateCardVisibility(printNum);
+  }
+
+  function resetModeToSame(printNum) {
+    setMode(printNum, "same");
+  }
+
   function resetPasses() {
     passNumbers = [2];
     passCustomized = new Set();
@@ -295,6 +309,8 @@
     addPass,
     removePass,
     resetPasses,
+    resetModeToSame,
+    setMode,
     isPassCustomized: (n) => passCustomized.has(n),
     setPassCustomized: (n) => passCustomized.add(n),
     clearPassCustomized: (n) => passCustomized.delete(n),

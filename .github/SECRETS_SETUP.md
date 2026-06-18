@@ -169,4 +169,4 @@ You should see five secret **names** (not the values).
 
 Pushing a git tag like `v2.0.0` runs `.github/workflows/release-macos.yml`.
 
-That workflow today builds the **Python/PyInstaller** app, not the Electron app. Electron releases would need a separate workflow later.
+That workflow builds the **Electron** app with `electron-builder`, signs and notarizes it, and uploads the DMG and ZIP to GitHub Releases.

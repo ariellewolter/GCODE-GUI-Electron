@@ -24,6 +24,7 @@ const {
   buildCombinedGcode,
   translateStartForWell,
   isDotInsideWellMm,
+  startPositionForCenterDotAtWellCenter,
   computeCircleDots,
   resolveParamsDots,
   parsePatternFloat,
@@ -72,7 +73,7 @@ describe("computeGridLayout", () => {
   it("returns zero dots when rows or perRow is non-positive", () => {
     assert.deepEqual(computeGridLayout(0, 10), { rows: 0, perRow: 10, dots: 0 });
     assert.deepEqual(computeGridLayout(3, 0), { rows: 3, perRow: 0, dots: 0 });
-    assert.deepEqual(computeGridLayout(-2, 10), { rows: -2, perRow: 10, dots: 0 });
+    assert.deepEqual(computeGridLayout(-2, 10), { rows: 0, perRow: 10, dots: 0 });
   });
 
   it("clamps oversized grids to MAX_GRID_DOTS", () => {
@@ -96,6 +97,11 @@ describe("validatePassSettings", () => {
       validatePassSettings(mockPassFields("1.5", "1.51", "0.0105")),
       null
     );
+  });
+
+  it("rejects upper Z less than or equal to lower Z", () => {
+    assert.match(validatePassSettingsFromValues(2, 1.5, 0.01), /Upper Z must be greater/);
+    assert.match(validatePassSettingsFromValues(1.5, 1.5, 0.01), /Upper Z must be greater/);
   });
 });
 
@@ -127,8 +133,8 @@ describe("validateAngleOffsetValues", () => {
     assert.match(validateAngleOffsetValues(null, 1), /required/i);
   });
 
-  it("rejects min greater than max", () => {
-    assert.match(validateAngleOffsetValues(2, 1), /Min Y offset/);
+  it("allows first column offset greater than last (reverse ramp)", () => {
+    assert.equal(validateAngleOffsetValues(1, 0.1), null);
   });
 });
 
@@ -237,6 +243,81 @@ describe("applyProgressiveYOffset", () => {
     const offsetDots = applyProgressiveYOffset(base, print1Dots, 10, 0.1, 1.0, 1);
     assert.equal(offsetDots[0].absX, print1Dots[0].absX);
     assert.ok(offsetDots[9].absY > offsetDots[0].absY);
+  });
+
+  it("ramps Y down across row when first column offset exceeds last", () => {
+    const print1Dots = computeGridDotsFromParams(defaultGridParams({ numDots: 20, perRow: 10 }));
+    const base = print1Dots.map((d) => ({ ...d }));
+    const offsetDots = applyProgressiveYOffset(base, print1Dots, 10, 1.0, 0.1, 1);
+    assert.ok(offsetDots[0].absY > offsetDots[9].absY);
+    assert.ok(Math.abs(offsetDots[0].absY - (print1Dots[0].absY + 1.0)) < 0.001);
+    assert.ok(Math.abs(offsetDots[9].absY - (print1Dots[9].absY + 0.1)) < 0.001);
+  });
+
+  it("averages first and last offsets when dots per row is 1", () => {
+    const print1Dots = computeGridDotsFromParams(defaultGridParams({ numDots: 3, perRow: 1 }));
+    const base = print1Dots.map((d) => ({ ...d }));
+    const offsetDots = applyProgressiveYOffset(base, print1Dots, 1, 0.1, 1.0, 1);
+    offsetDots.forEach((dot, i) => {
+      assert.ok(Math.abs(dot.absY - (print1Dots[i].absY + 0.55)) < 0.001);
+    });
+  });
+});
+
+describe("startPositionForCenterDotAtWellCenter", () => {
+  it("places well center between middle dots for even column count", () => {
+    const [cx] = DEFAULT_24WELL_CENTERS.A1;
+    const spacing = 0.5;
+    const [sx, sy] = startPositionForCenterDotAtWellCenter("A1", 30, 10, spacing, spacing);
+    const dots = computeGridDotsFromParams({
+      startX: sx,
+      startY: sy,
+      numDots: 30,
+      perRow: 10,
+      spacingX: spacing,
+      spacingY: spacing,
+    });
+    const dot15 = dots[14];
+    const dot16 = dots[15];
+    assert.equal(dot15.absX, cx - spacing / 2);
+    assert.equal(dot16.absX, cx + spacing / 2);
+    assert.equal((dot15.absX + dot16.absX) / 2, cx);
+    assert.equal(dot15.absY, sy + spacing);
+    assert.equal(dot16.absY, sy + spacing);
+  });
+
+  it("places well center on middle dot for odd column count", () => {
+    const [cx] = DEFAULT_24WELL_CENTERS.A1;
+    const spacing = 0.3;
+    const [sx] = startPositionForCenterDotAtWellCenter("A1", 27, 9, spacing, spacing);
+    const dots = computeGridDotsFromParams({
+      startX: sx,
+      startY: 0,
+      numDots: 27,
+      perRow: 9,
+      spacingX: spacing,
+      spacingY: spacing,
+    });
+    assert.equal(dots[4].absX, cx);
+  });
+
+  it("places well center between middle rows for even row count", () => {
+    const [, cy] = DEFAULT_24WELL_CENTERS.A1;
+    const spacing = 0.5;
+    const [, sy] = startPositionForCenterDotAtWellCenter("A1", 20, 10, spacing, spacing);
+    const dots = computeGridDotsFromParams({
+      startX: 0,
+      startY: sy,
+      numDots: 20,
+      perRow: 10,
+      spacingX: spacing,
+      spacingY: spacing,
+    });
+    const dot5 = dots[4];
+    const dot15 = dots[14];
+    assert.equal(dot5.absY, cy - spacing / 2);
+    assert.equal(dot15.absY, cy + spacing / 2);
+    assert.equal((dot5.absY + dot15.absY) / 2, cy);
   });
 });
 

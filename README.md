@@ -8,8 +8,10 @@ Desktop app for generating G-code for 24-well plate bioprinting, with live previ
 
 No Python or Node install is required for lab users.
 
-1. Open **[Releases](https://github.com/ariellewolter/GCODE-GUI-Electron/releases)** and download the latest `G-Code Generator-*-mac.zip` (attached to the release tag).
-2. Unzip the archive.
+1. Open **[Releases](https://github.com/ariellewolter/GCODE-GUI-Electron/releases)** and download the latest `G-Code Generator-*-universal.dmg` or `G-Code.Generator-*-mac.zip`.
+2. Install the app:
+   - **DMG:** Open the disk image and drag `G-Code Generator.app` to Applications.
+   - **ZIP:** Unzip the archive.
 3. **First launch only:** Right-click `G-Code Generator.app` → **Open** → **Open** (macOS Gatekeeper). After that you can double-click normally.
 4. Configure your pattern, check the preview, then **Save G-code**.
 
@@ -28,8 +30,8 @@ The build is a **universal macOS app** (Apple Silicon and Intel). It is signed a
 
 | Platform | Status |
 |----------|--------|
-| macOS (Apple Silicon) | Supported via release zip |
-| macOS (Intel) | Supported via universal release zip |
+| macOS (Apple Silicon) | Supported via release DMG or ZIP |
+| macOS (Intel) | Supported via universal release DMG or ZIP |
 | Windows / Linux | Not available for the Electron app yet |
 
 ## Features
@@ -87,17 +89,17 @@ npm run electron
 npm test
 ```
 
-### Build macOS universal zip (local)
+### Build macOS universal release (local)
 
 ```bash
 npm run dist:mac
 ```
 
-Output: `dist-electron/G-Code Generator-*-mac.zip`
+Output: `dist-electron/G-Code Generator-*-universal.dmg` and `dist-electron/G-Code.Generator-*-mac.zip`
 
 ### Release (CI)
 
-Pushing a version tag triggers the GitHub Actions workflow (`.github/workflows/release-macos.yml`), which builds a universal zip, signs/notarizes when secrets are set, and uploads to Releases.
+Pushing a version tag triggers the GitHub Actions workflow (`.github/workflows/release-macos.yml`), which builds universal DMG and ZIP artifacts, signs/notarizes when secrets are set, auto-generates release notes, and uploads to Releases.
 
 ```bash
 git tag v2.0.18
@@ -127,7 +129,7 @@ The repository still contains an older **Python / Tkinter** build (`gcode_genera
 
 ## License
 
-© 2025 Arielle Wolter
+© 2025–2026 Evonyx by Arielle Wolter
 
 ## Support
 
