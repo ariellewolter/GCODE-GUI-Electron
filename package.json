@@ -1,6 +1,6 @@
 {
   "name": "gcode_gui",
-  "version": "2.0.18",
+  "version": "2.0.19",
   "description": "A professional G-code generator for 24-well plate bioprinting applications with live visual preview and comprehensive features.",
   "main": "electron/main.js",
   "scripts": {
