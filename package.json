@@ -7,6 +7,7 @@
     "sync:core": "node scripts/sync-gcode-core.js",
     "electron": "npm run sync:core && node scripts/run-electron.js",
     "dist:mac": "npm run sync:core && env -u ELECTRON_RUN_AS_NODE electron-builder --mac --publish never",
+    "dist:win": "node scripts/sync-gcode-core.js && node scripts/run-electron-builder.js --win --publish never",
     "test": "node scripts/check-renderer-core-imports.js && node --test tests/"
   },
   "build": {
@@ -46,6 +47,29 @@
       "entitlements": "electron-build/entitlements.mac.plist",
       "entitlementsInherit": "electron-build/entitlements.mac.plist",
       "notarize": true
+    },
+    "win": {
+      "icon": "electron/assets/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     }
   },
   "repository": {
