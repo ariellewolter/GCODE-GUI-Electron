@@ -25,18 +25,18 @@ const {
   DEFAULT_LOWER_Z_OFFSET,
   DEFAULT_UPPER_Z_OFFSET,
   DEFAULT_EXTRUSION,
-  WELL_DIAM_MM,
-  WELL_PITCH_X_MM,
-  WELL_PITCH_Y_MM,
-  ROW_KEYS,
-  COL_KEYS,
-  WELL_RADIUS_MM,
   OVERLAP_TOLERANCE_MM,
   MAX_GRID_DOTS,
   MAX_GRID_ROWS,
   MAX_GRID_PER_ROW,
-  DEFAULT_24WELL_STARTS,
-  DEFAULT_24WELL_CENTERS,
+  DEFAULT_PLATE_TYPE,
+  PLATE_TYPE_OPTIONS,
+  getPlateType,
+  getWellStarts,
+  getWellCenters,
+  getWellDiamMm,
+  getWellRadiusMm,
+  sortWellKeys,
   safeInt,
   safeFloat,
   parseEcalcFloat,
@@ -68,9 +68,28 @@ const {
   formatGcodeXY,
 } = GcodeCore;
 
+function getCurrentPlateTypeId() {
+  return el.plateType?.value || DEFAULT_PLATE_TYPE;
+}
+
+function getCurrentPlateType() {
+  return getPlateType(getCurrentPlateTypeId());
+}
+
+function currentWellCenters() {
+  return getWellCenters(getCurrentPlateTypeId());
+}
+
+function currentWellDiamMm() {
+  return getWellDiamMm(getCurrentPlateTypeId());
+}
+
 const STEPS_PER_MM_ECALC = 10498.7;
 
 const el = {
+  plateType: document.getElementById("plate-type"),
+  storedStartsPrint1: document.getElementById("stored-starts-print1"),
+  storedStartsCircle: document.getElementById("stored-starts-circle"),
   well: document.getElementById("well"),
   startX: document.getElementById("start-x"),
   startY: document.getElementById("start-y"),
@@ -389,6 +408,29 @@ let ecalcOpen = true;
 
 const ExtraPrintUI = window.ExtraPrintUI;
 
+function extraPrintGetMode(printNum) {
+  return ExtraPrintUI?.getMode?.(printNum) || "same";
+}
+
+function extraPrintIsOffsetEnabled(printNum) {
+  return Boolean(ExtraPrintUI?.isOffsetEnabled?.(printNum));
+}
+
+function extraPrintFieldTarget(printNum) {
+  return ExtraPrintUI?.fieldTarget?.(printNum) || null;
+}
+
+function extraPrintIsPassCustomized(printNum) {
+  return Boolean(ExtraPrintUI?.isPassCustomized?.(printNum));
+}
+
+function validatePassSettingsSafe(fields) {
+  if (!fields?.lowerZ || !fields?.upperZ || !fields?.extrusionE) {
+    return "Error: Lower Z, Upper Z, and Extrusion (E) are required.";
+  }
+  return validatePassSettings(fields);
+}
+
 const EXTRA_PASS_PALETTE = [
   { dot: "#9333EA", toolpath: "rgba(147, 51, 234, 0.55)" },
   { dot: "#ea580c", toolpath: "rgba(234, 88, 12, 0.55)" },
@@ -434,13 +476,13 @@ function getActivePassPreviewWarning() {
   if (validatePassSettings(print1FieldTarget())) {
     return "Pass settings incomplete";
   }
-  if (!isSecondPassEnabled()) return "";
+  if (!isSecondPassEnabled() || !ExtraPrintUI) return "";
   for (const printNum of getExtraPassList()) {
-    const fields = ExtraPrintUI.fieldTarget(printNum);
-    if (validatePassSettings(fields)) {
+    const fields = extraPrintFieldTarget(printNum);
+    if (validatePassSettingsSafe(fields)) {
       return `Print ${printNum} pass settings incomplete`;
     }
-    if (ExtraPrintUI.isOffsetEnabled(printNum) && validateAngleOffsetFor(printNum)) {
+    if (extraPrintIsOffsetEnabled(printNum) && validateAngleOffsetFor(printNum)) {
       return `Print ${printNum} Y offset settings incomplete`;
     }
   }
@@ -492,7 +534,104 @@ function outsideWellMetaNote(positions) {
   return count > 0 ? ` | ${count} outside well` : "";
 }
 
-function applyWellDefaults(target, wellKey) {
+function formatStoredStartOption(wellKey, x, y) {
+  return `${wellKey} — X ${formatCoordMm(x)}, Y ${formatCoordMm(y)}`;
+}
+
+function populateStoredStartsSelect(selectEl, plateTypeId = getCurrentPlateTypeId()) {
+  if (!selectEl) return;
+  const starts = getWellStarts(plateTypeId);
+  const prev = selectEl.value;
+  selectEl.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select stored start…";
+  selectEl.appendChild(placeholder);
+  sortWellKeys(Object.keys(starts), plateTypeId).forEach((wellKey) => {
+    const [x, y] = starts[wellKey];
+    const option = document.createElement("option");
+    option.value = wellKey;
+    option.textContent = formatStoredStartOption(wellKey, x, y);
+    selectEl.appendChild(option);
+  });
+  if (prev && starts[prev]) {
+    selectEl.value = prev;
+  } else {
+    selectEl.value = "";
+  }
+}
+
+function applyStoredStartToTarget(wellKey, target, { applyCenter = false } = {}) {
+  if (!target || !wellKey) return;
+  const plateTypeId = getCurrentPlateTypeId();
+  const [x, y] = applyCenter
+    ? getWellCenterMm(wellKey, plateTypeId)
+    : (getWellStarts(plateTypeId)[wellKey] || getWellStarts(plateTypeId).A1);
+  if (target.startX) target.startX.value = x.toFixed(2);
+  if (target.startY) target.startY.value = y.toFixed(2);
+  if (target.centerX) target.centerX.value = x.toFixed(2);
+  if (target.centerY) target.centerY.value = y.toFixed(2);
+}
+
+function syncStoredStartsPicker(selectEl, wellKey) {
+  if (!selectEl || !wellKey) return;
+  const option = [...selectEl.options].find((entry) => entry.value === wellKey);
+  selectEl.value = option ? wellKey : "";
+}
+
+function syncStoredStartsPickersForWell(wellKey = el.well?.value) {
+  if (!wellKey) return;
+  syncStoredStartsPicker(el.storedStartsPrint1, wellKey);
+  syncStoredStartsPicker(el.storedStartsCircle, wellKey);
+  getExtraPassList().forEach((printNum) => {
+    syncStoredStartsPicker(document.getElementById(`p${printNum}-stored-starts`), wellKey);
+  });
+}
+
+function bindStoredStartsSelect(selectEl, getTarget, { applyCenter = false, onApply } = {}) {
+  if (!selectEl || selectEl.dataset.boundStoredStarts) return;
+  selectEl.dataset.boundStoredStarts = "1";
+  selectEl.addEventListener("change", () => {
+    const wellKey = selectEl.value;
+    if (!wellKey) return;
+    applyStoredStartToTarget(wellKey, getTarget(), { applyCenter });
+    onApply?.(wellKey);
+    drawPreview();
+  });
+}
+
+function setupExtraPassStoredStarts(printNum) {
+  const selectEl = document.getElementById(`p${printNum}-stored-starts`);
+  populateStoredStartsSelect(selectEl);
+  bindStoredStartsSelect(selectEl, () => extraPrintFieldTarget(printNum), {
+    onApply: () => ExtraPrintUI?.setPassCustomized?.(printNum),
+  });
+  syncStoredStartsPicker(selectEl, el.well?.value);
+}
+
+function refreshAllStoredStartsDropdowns(plateTypeId = getCurrentPlateTypeId()) {
+  populateStoredStartsSelect(el.storedStartsPrint1, plateTypeId);
+  populateStoredStartsSelect(el.storedStartsCircle, plateTypeId);
+  syncStoredStartsPickersForWell(el.well?.value);
+  if (ExtraPrintUI) {
+    getExtraPassList().forEach((printNum) => setupExtraPassStoredStarts(printNum));
+  }
+}
+
+function initStoredStartsDropdowns() {
+  bindStoredStartsSelect(el.storedStartsPrint1, print1FieldTarget);
+  bindStoredStartsSelect(el.storedStartsCircle, () => ({
+    centerX: el.circleCenterX,
+    centerY: el.circleCenterY,
+  }), { applyCenter: true });
+  refreshAllStoredStartsDropdowns();
+}
+
+function isPrint1FieldTarget(target) {
+  return Boolean(target?.startX && target.startX === el.startX);
+}
+
+function applyWellDefaults(target, wellKey, plateTypeId = getCurrentPlateTypeId()) {
   target.perRow.value = "10";
   target.rows.value = "3";
   syncGridDotsFromLayout(target.dots, target.perRow, target.rows);
@@ -503,9 +642,13 @@ function applyWellDefaults(target, wellKey) {
   target.extrusionE.value = DEFAULT_EXTRUSION.toFixed(4);
   syncWellNumberFromDropdown();
 
-  const [cx, cy] = DEFAULT_24WELL_STARTS[wellKey] || DEFAULT_24WELL_STARTS.A1;
-  target.startX.value = cx.toFixed(2);
-  target.startY.value = cy.toFixed(2);
+  const starts = getWellStarts(plateTypeId);
+  const [cx, cy] = starts[wellKey] || starts.A1;
+  if (target.startX) target.startX.value = cx.toFixed(2);
+  if (target.startY) target.startY.value = cy.toFixed(2);
+  if (isPrint1FieldTarget(target)) {
+    syncStoredStartsPickersForWell(wellKey);
+  }
 }
 
 function print1FieldTarget() {
@@ -540,20 +683,21 @@ function copyPrint1PatternToFields(target) {
 }
 
 function copyPrint1PatternToExtraPass(printNum) {
-  const fields = ExtraPrintUI.fieldTarget(printNum);
+  const fields = extraPrintFieldTarget(printNum);
   copyPrint1PatternToFields(fields);
 }
 
-function setDefaultsFromCurrentWell() {
-  applyWellDefaults(print1FieldTarget(), el.well.value);
+function setDefaultsFromCurrentWell(plateTypeId = getCurrentPlateTypeId()) {
+  applyWellDefaults(print1FieldTarget(), el.well.value, plateTypeId);
 }
 
 function setExtraPrintDefaults(printNum) {
-  const fields = ExtraPrintUI.fieldTarget(printNum);
+  const fields = extraPrintFieldTarget(printNum);
   if (!fields?.startX) return;
   copyPrint1PatternToExtraPass(printNum);
-  ExtraPrintUI.clearPassCustomized(printNum);
+  ExtraPrintUI?.clearPassCustomized?.(printNum);
   syncExtraPrintPassFromPrint1(printNum);
+  syncStoredStartsPicker(document.getElementById(`p${printNum}-stored-starts`), el.well?.value);
 }
 
 function setAllExtraPrintDefaults() {
@@ -572,7 +716,8 @@ function translatePatternStartForWellChange(fields, fromWell, toWell) {
   if (!fields?.startX || !fields?.startY) return;
   const startX = parsePatternFloat(fields.startX.value);
   const startY = parsePatternFloat(fields.startY.value);
-  const [sx, sy] = translateStartForWell(fromWell, toWell, startX, startY);
+  const plateTypeId = getCurrentPlateTypeId();
+  const [sx, sy] = translateStartForWell(fromWell, toWell, startX, startY, plateTypeId);
   fields.startX.value = sx.toFixed(2);
   fields.startY.value = sy.toFixed(2);
 }
@@ -582,10 +727,10 @@ function applyMultiPatternMetricsWellChange(fromWell, toWell) {
   syncGridDotsFromLayout(el.dots, el.perRow, el.rows);
 
   getExtraPassList().forEach((printNum) => {
-    const fields = ExtraPrintUI.fieldTarget(printNum);
+    const fields = extraPrintFieldTarget(printNum);
     if (!fields) return;
-    const offsetOn = ExtraPrintUI.isOffsetEnabled(printNum);
-    const different = ExtraPrintUI.getMode(printNum) === "different";
+    const offsetOn = extraPrintIsOffsetEnabled(printNum);
+    const different = extraPrintGetMode(printNum) === "different";
     if (!offsetOn && different) {
       translatePatternStartForWellChange(fields, fromWell, toWell);
       if (fields.dots && fields.perRow && fields.rows) {
@@ -614,7 +759,7 @@ function onStandardPatternWellChange(newWellKey) {
 function onMultiPatternWellChange(newWellKey) {
   if (!isKeepMultiPatternMetricsEnabled()) {
     setDefaultsFromCurrentWell();
-    if (isSecondPassEnabled()) {
+    if (isSecondPassEnabled() && ExtraPrintUI) {
       getExtraPassList().forEach((printNum) => {
         ExtraPrintUI.resetModeToSame(printNum);
         setExtraPrintDefaults(printNum);
@@ -630,7 +775,7 @@ function onMultiPatternWellChange(newWellKey) {
 }
 
 function syncExtraPrintPassFromPrint1(printNum) {
-  const fields = ExtraPrintUI.fieldTarget(printNum);
+  const fields = extraPrintFieldTarget(printNum);
   if (!fields?.lowerZ) return;
   fields.lowerZ.value = el.lowerZ.value;
   fields.upperZ.value = el.upperZ.value;
@@ -638,7 +783,7 @@ function syncExtraPrintPassFromPrint1(printNum) {
 }
 
 function applyExtraPrintPassSettings(params, printNum) {
-  const fields = ExtraPrintUI.fieldTarget(printNum);
+  const fields = extraPrintFieldTarget(printNum);
   if (!fields?.lowerZ) return params;
   return GcodeCore.applyPrint2PassSettings(params, {
     lowerZ: fields.lowerZ.value,
@@ -659,7 +804,7 @@ function getMultiPrintFileNameOptions(printNum = null) {
       yOffsetMin: offset.valid ? offset.minParsed : null,
       yOffsetMax: offset.valid ? offset.maxParsed : null,
       yOffsetNegative: offset.sign < 0,
-      print2PatternMode: ExtraPrintUI.getMode(n),
+      print2PatternMode: extraPrintGetMode(n),
     };
   };
 
@@ -671,7 +816,7 @@ function getMultiPrintFileNameOptions(printNum = null) {
     if (offset.enabled && offset.valid) return fileNameOptionsForPass(passes[i]);
   }
   for (let i = passes.length - 1; i >= 0; i -= 1) {
-    if (ExtraPrintUI.getMode(passes[i]) === "different") {
+    if (extraPrintGetMode(passes[i]) === "different") {
       return fileNameOptionsForPass(passes[i]);
     }
   }
@@ -685,7 +830,7 @@ function buildCombinedMultiPrintFileNameSuffix() {
       const range = `${formatCoordMm(offset.minParsed)}-${formatCoordMm(offset.maxParsed)}`;
       return `p${n}yOff${range}${offset.sign < 0 ? "neg" : ""}`;
     }
-    return ExtraPrintUI.getMode(n) === "different" ? `p${n}diff` : `p${n}same`;
+    return extraPrintGetMode(n) === "different" ? `p${n}diff` : `p${n}same`;
   });
   return tags.length ? `_${tags.join("_")}` : "";
 }
@@ -710,11 +855,13 @@ function prepareExportState() {
   syncWellNumberFromDropdown();
   if (isCirclePrintEnabled()) return;
   syncGridDotsFromLayout(el.dots, el.perRow, el.rows);
-  if (isSecondPassEnabled()) {
+  if (isSecondPassEnabled() && ExtraPrintUI) {
     getExtraPassList().forEach((printNum) => {
-      if (ExtraPrintUI.getMode(printNum) === "different" && !ExtraPrintUI.isOffsetEnabled(printNum)) {
-        const fields = ExtraPrintUI.fieldTarget(printNum);
-        syncGridDotsFromLayout(fields.dots, fields.perRow, fields.rows);
+      if (extraPrintGetMode(printNum) === "different" && !extraPrintIsOffsetEnabled(printNum)) {
+        const fields = extraPrintFieldTarget(printNum);
+        if (fields?.dots && fields?.perRow && fields?.rows) {
+          syncGridDotsFromLayout(fields.dots, fields.perRow, fields.rows);
+        }
       }
     });
   }
@@ -733,6 +880,7 @@ function collectPrintParams(fields) {
   return {
     well: fields.well.value,
     wellNumber: fields.well.value,
+    plateTypeId: getCurrentPlateTypeId(),
     startX: parsePatternFloat(fields.startX.value),
     startY: parsePatternFloat(fields.startY.value),
     numDots: safeInt(fields.dots.value),
@@ -751,12 +899,14 @@ function collectPrint1Params() {
 }
 
 function collectExtraPrintPatternParams(printNum) {
-  const fields = ExtraPrintUI.fieldTarget(printNum);
+  const fields = extraPrintFieldTarget(printNum);
   const print1 = collectPrint1Params();
+  if (!fields?.startX) return { ...print1 };
   const pass = readPassFieldValues(fields);
   return {
     well: print1.well,
     wellNumber: print1.wellNumber,
+    plateTypeId: print1.plateTypeId,
     startX: parsePatternFloat(fields.startX.value),
     startY: parsePatternFloat(fields.startY.value),
     numDots: safeInt(fields.dots.value),
@@ -771,7 +921,7 @@ function collectExtraPrintPatternParams(printNum) {
 }
 
 function getAngleOffsetSettingsFor(printNum) {
-  const fields = ExtraPrintUI.fieldTarget(printNum);
+  const fields = extraPrintFieldTarget(printNum);
   if (!fields) {
     return {
       enabled: false,
@@ -787,7 +937,7 @@ function getAngleOffsetSettingsFor(printNum) {
   const max = parseEcalcFloat(fields.offsetMax?.value);
   const valid = validateAngleOffsetValues(min, max) === null;
   return {
-    enabled: ExtraPrintUI.isOffsetEnabled(printNum),
+    enabled: extraPrintIsOffsetEnabled(printNum),
     min: valid ? min : 0,
     max: valid ? max : 0,
     minParsed: min,
@@ -831,8 +981,8 @@ function isCirclePrintEnabled() {
   return getAppMode() === "circle-print";
 }
 
-function setCircleCenterToWell(wellKey) {
-  const [cx, cy] = getWellCenterMm(wellKey);
+function setCircleCenterToWell(wellKey, plateTypeId = getCurrentPlateTypeId()) {
+  const [cx, cy] = getWellCenterMm(wellKey, plateTypeId);
   if (el.circleCenterX) el.circleCenterX.value = cx.toFixed(2);
   if (el.circleCenterY) el.circleCenterY.value = cy.toFixed(2);
 }
@@ -841,7 +991,8 @@ function translateCircleCenterForWellChange(fromWell, toWell) {
   if (!el.circleCenterX || !el.circleCenterY) return;
   const centerX = parsePatternFloat(el.circleCenterX.value);
   const centerY = parsePatternFloat(el.circleCenterY.value);
-  const [sx, sy] = translateStartForWell(fromWell, toWell, centerX, centerY);
+  const plateTypeId = getCurrentPlateTypeId();
+  const [sx, sy] = translateStartForWell(fromWell, toWell, centerX, centerY, plateTypeId);
   el.circleCenterX.value = sx.toFixed(2);
   el.circleCenterY.value = sy.toFixed(2);
 }
@@ -866,6 +1017,7 @@ function applyCircleDefaults(wellKey) {
   el.upperZ.value = DEFAULT_UPPER_Z_OFFSET.toFixed(2);
   el.extrusionE.value = DEFAULT_EXTRUSION.toFixed(4);
   circlePatternLastWell = wellKey;
+  syncStoredStartsPicker(el.storedStartsCircle, wellKey);
 }
 
 function collectCircleParams() {
@@ -880,6 +1032,7 @@ function collectCircleParams() {
   return {
     well,
     wellNumber: well,
+    plateTypeId: getCurrentPlateTypeId(),
     centerX,
     centerY,
     numDots,
@@ -920,7 +1073,8 @@ function collectBulkParamsForWell(wellKey) {
     base.well,
     wellKey,
     base.startX,
-    base.startY
+    base.startY,
+    base.plateTypeId
   );
   return {
     ...base,
@@ -933,14 +1087,11 @@ function collectBulkParamsForWell(wellKey) {
 
 function getSelectedBulkWells() {
   if (!el.bulkWellGrid) return [];
-  return [...el.bulkWellGrid.querySelectorAll('input[type="checkbox"]:checked')]
-    .map((input) => input.value)
-    .sort((a, b) => {
-      const rowA = ROW_KEYS.indexOf(a[0]);
-      const rowB = ROW_KEYS.indexOf(b[0]);
-      if (rowA !== rowB) return rowA - rowB;
-      return Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10);
-    });
+  const plateTypeId = getCurrentPlateTypeId();
+  return sortWellKeys(
+    [...el.bulkWellGrid.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value),
+    plateTypeId
+  );
 }
 
 function setBulkWellChecked(wellKey, checked) {
@@ -964,7 +1115,8 @@ function updateBulkSelectionCount() {
 }
 
 function getPlateBoundsMm() {
-  const centers = Object.values(DEFAULT_24WELL_CENTERS);
+  const centers = Object.values(currentWellCenters());
+  const wellDiamMm = currentWellDiamMm();
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
@@ -975,7 +1127,7 @@ function getPlateBoundsMm() {
     minY = Math.min(minY, y);
     maxY = Math.max(maxY, y);
   });
-  const pad = WELL_DIAM_MM / 2;
+  const pad = wellDiamMm / 2;
   return { minX: minX - pad, maxX: maxX + pad, minY: minY - pad, maxY: maxY + pad };
 }
 
@@ -1008,11 +1160,13 @@ function setAppMode(tabId) {
   } else if (tabId === "standard") {
     standardPatternLastWell = currentWell;
   } else if (tabId === "multi-print") {
-    getExtraPassList().forEach((printNum) => {
-      if (!ExtraPrintUI.isPassCustomized(printNum)) {
-        syncExtraPrintPassFromPrint1(printNum);
-      }
-    });
+    if (ExtraPrintUI) {
+      getExtraPassList().forEach((printNum) => {
+        if (!extraPrintIsPassCustomized(printNum)) {
+          syncExtraPrintPassFromPrint1(printNum);
+        }
+      });
+    }
     multiPatternLastWell = currentWell;
   } else if (tabId === "circle-print") {
     if (circlePatternLastWell && circlePatternLastWell !== currentWell) {
@@ -1025,10 +1179,10 @@ function setAppMode(tabId) {
 }
 
 function collectExtraPrintParams(printNum) {
-  if (!isSecondPassEnabled()) return null;
+  if (!isSecondPassEnabled() || !ExtraPrintUI) return null;
 
-  const offsetOn = ExtraPrintUI.isOffsetEnabled(printNum);
-  const mode = ExtraPrintUI.getMode(printNum);
+  const offsetOn = extraPrintIsOffsetEnabled(printNum);
+  const mode = extraPrintGetMode(printNum);
   let params;
   if (offsetOn) {
     params = collectPrint1Params();
@@ -1059,18 +1213,22 @@ function collectPrint2Params() {
 }
 
 function collectAllExtraPrintParams() {
+  if (!ExtraPrintUI) return [];
   return getExtraPassList()
     .map((printNum) => ({
       printNum,
       params: collectExtraPrintParams(printNum),
-      sameMode: ExtraPrintUI.getMode(printNum) === "same",
+      sameMode: extraPrintGetMode(printNum) === "same",
     }))
     .filter((entry) => entry.params && !entry.params.offsetInvalid);
 }
 
 function validateAngleOffsetFor(printNum) {
-  if (!isSecondPassEnabled() || !ExtraPrintUI.isOffsetEnabled(printNum)) return null;
-  const fields = ExtraPrintUI.fieldTarget(printNum);
+  if (!isSecondPassEnabled() || !extraPrintIsOffsetEnabled(printNum)) return null;
+  const fields = extraPrintFieldTarget(printNum);
+  if (!fields) {
+    return "Error: First- and last-column Y offsets are required when Y offset is enabled.";
+  }
   return validateAngleOffsetValues(
     parseEcalcFloat(fields.offsetMin?.value),
     parseEcalcFloat(fields.offsetMax?.value)
@@ -1167,9 +1325,9 @@ function syncGridDotsFromLayout(dotsEl, perRowEl, rowsEl) {
 }
 
 function onPrint1PassInput() {
-  if (isSecondPassEnabled()) {
+  if (isSecondPassEnabled() && ExtraPrintUI) {
     getExtraPassList().forEach((printNum) => {
-      if (!ExtraPrintUI.isPassCustomized(printNum)) {
+      if (!extraPrintIsPassCustomized(printNum)) {
         syncExtraPrintPassFromPrint1(printNum);
       }
     });
@@ -1238,7 +1396,8 @@ function buildGcode(params) {
   lines.push("; Zplus: ");
   lines.push("; Zplusplus: ");
   lines.push("; Zvoid: ");
-  lines.push(`; num2str(t) ;WORKING ON ROW ${rowNum} OF THE 24 WELL TRAY`);
+  const trayLabel = getCurrentPlateType().label.replace(/-/g, " ").toUpperCase();
+  lines.push(`; num2str(t) ;WORKING ON ROW ${rowNum} OF THE ${trayLabel} TRAY`);
   lines.push(`; Well number ${wellNumber}`);
   lines.push("");
   lines.push("M83");
@@ -1590,8 +1749,8 @@ function drawPreviewLegend(ctx, cw, ch, { extraPassNums = [], showOverlap = fals
   ctx.restore();
 }
 
-function wellToCanvas(wellKey, refCx, refCy, pxCenterX, pxCenterY, scale) {
-  const [cx, cy] = DEFAULT_24WELL_CENTERS[wellKey] || DEFAULT_24WELL_CENTERS.A1;
+function wellToCanvas(wellKey, refCx, refCy, pxCenterX, pxCenterY, scale, plateTypeId = getCurrentPlateTypeId()) {
+  const [cx, cy] = getWellCenterMm(wellKey, plateTypeId);
   return {
     px: pxCenterX + (cx - refCx) * scale,
     py: pxCenterY - (cy - refCy) * scale,
@@ -1601,12 +1760,13 @@ function wellToCanvas(wellKey, refCx, refCy, pxCenterX, pxCenterY, scale) {
 function computeDotPositions(cfg, refCx, refCy, pxCenterX, pxCenterY, scale, rPx, dotR) {
   const positions = [];
   const wellKey = cfg.well;
+  const plateTypeId = cfg.plateTypeId || getCurrentPlateTypeId();
   const sourceDots = resolveParamsDots(cfg);
 
   sourceDots.forEach((dot) => {
     const px = pxCenterX + (dot.absX - refCx) * scale;
     const py = pxCenterY - (dot.absY - refCy) * scale;
-    const outsideWell = !isDotInsideWellMm(dot.absX, dot.absY, wellKey);
+    const outsideWell = !isDotInsideWellMm(dot.absX, dot.absY, wellKey, plateTypeId);
     positions.push({ absX: dot.absX, absY: dot.absY, px, py, outsideWell });
   });
 
@@ -1727,12 +1887,12 @@ function drawXYHomeIndicator(ctx, cornerX, cornerY, { scale = 1 } = {}) {
   ctx.restore();
 }
 
-function dotsFromAbsCoords(customDots, wellKey, refCx, refCy, pxCenterX, pxCenterY, scale) {
+function dotsFromAbsCoords(customDots, wellKey, refCx, refCy, pxCenterX, pxCenterY, scale, plateTypeId = getCurrentPlateTypeId()) {
   const positions = [];
   customDots.forEach((dot) => {
     const px = pxCenterX + (dot.absX - refCx) * scale;
     const py = pxCenterY - (dot.absY - refCy) * scale;
-    const outsideWell = !isDotInsideWellMm(dot.absX, dot.absY, wellKey);
+    const outsideWell = !isDotInsideWellMm(dot.absX, dot.absY, wellKey, plateTypeId);
     positions.push({ absX: dot.absX, absY: dot.absY, px, py, outsideWell });
   });
   return positions;
@@ -1812,7 +1972,9 @@ function drawStartArrow(ctx, positions, dotR) {
 
 function drawWellDetailPreview(canvasEl, params, positionsOut) {
   const detailCtx = canvasEl.getContext("2d");
-  const refCenter = DEFAULT_24WELL_CENTERS[params.well] || DEFAULT_24WELL_CENTERS.A1;
+  const plateTypeId = params.plateTypeId || getCurrentPlateTypeId();
+  const wellDiamMm = getWellDiamMm(plateTypeId);
+  const refCenter = getWellCenterMm(params.well, plateTypeId);
   const refCx = refCenter[0];
   const refCy = refCenter[1];
   const cw = canvasEl.width;
@@ -1821,8 +1983,8 @@ function drawWellDetailPreview(canvasEl, params, positionsOut) {
   const pxCenterY = ch / 2;
   const margin = 20;
   const usablePx = Math.min(cw, ch) - (2 * margin);
-  const scale = usablePx / WELL_DIAM_MM;
-  const rPx = (WELL_DIAM_MM / 2) * scale;
+  const scale = usablePx / wellDiamMm;
+  const rPx = (wellDiamMm / 2) * scale;
   const dotR = 3.5;
 
   const printData = computeDotPositions(
@@ -1853,8 +2015,6 @@ function drawWellDetailPreview(canvasEl, params, positionsOut) {
   const homeScale = Math.min(1, canvasEl.width / 560);
   drawXYHomeIndicator(detailCtx, homeWell.px - rPx, homeWell.py + rPx, { scale: homeScale });
   drawPreviewLegend(detailCtx, cw, ch, {
-    showPrint2: false,
-    showOverlap: false,
     showOutside: printData.positions.some((dot) => dot.outsideWell),
   });
 
@@ -1891,7 +2051,7 @@ function drawBulkDetailPreview() {
       `Well ${wellKey}`,
       `Start X ${formatCoordMm(params.startX)} Y ${formatCoordMm(params.startY)}`,
       `grid ${formatCoordMm(printData.gridWmm)} × ${formatCoordMm(printData.gridHmm)} mm`,
-      `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideWellMetaNote(printData.positions)}`,
+      `Ø ${getWellDiamMm(params.plateTypeId).toFixed(1)} mm${outsideWellMetaNote(printData.positions)}`,
     ].join(" | ");
   }
 }
@@ -1900,6 +2060,9 @@ function drawBulkPreview() {
   prepareExportState();
   const selected = getSelectedBulkWells();
   const refParams = collectPrint1Params();
+  const plateType = getCurrentPlateType();
+  const plateTypeId = plateType.id;
+  const wellDiamMm = plateType.wellDiamMm;
   const bounds = getPlateBoundsMm();
   const ctx = el.canvas.getContext("2d");
   const cw = el.canvas.width;
@@ -1917,18 +2080,18 @@ function drawBulkPreview() {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("Select one or more wells to preview", cw / 2, ch / 2);
-    setPreviewMeta("24-well plate | No wells selected");
+    setPreviewMeta(`${plateType.label} plate | No wells selected`);
     drawBulkDetailPreview();
     return;
   }
 
   const { scale } = plateMmToCanvas(bounds.minX, bounds.minY, bounds, cw, ch, margin);
-  const rPx = (WELL_DIAM_MM / 2) * scale;
+  const rPx = (wellDiamMm / 2) * scale;
 
-  ROW_KEYS.forEach((rowKey) => {
-    COL_KEYS.forEach((colKey) => {
+  plateType.rowKeys.forEach((rowKey) => {
+    plateType.colKeys.forEach((colKey) => {
       const wellKey = `${rowKey}${colKey}`;
-      const [cx, cy] = getWellCenterMm(wellKey);
+      const [cx, cy] = getWellCenterMm(wellKey, plateTypeId);
       const { px, py } = plateMmToCanvas(cx, cy, bounds, cw, ch, margin);
       const isSelected = selected.includes(wellKey);
       const isRef = wellKey === refParams.well;
@@ -1954,7 +2117,7 @@ function drawBulkPreview() {
     const dots = resolveParamsDots(params);
     dots.forEach((dot) => {
       const { px, py } = plateMmToCanvas(dot.absX, dot.absY, bounds, cw, ch, margin);
-      const outsideWell = !isDotInsideWellMm(dot.absX, dot.absY, wellKey);
+      const outsideWell = !isDotInsideWellMm(dot.absX, dot.absY, wellKey, plateTypeId);
       const insideColor = wellKey === refParams.well ? PRINT1_DOT_COLOR : "#60a5fa";
       ctx.fillStyle = outsideWell ? OUTSIDE_WELL_DOT_COLOR : insideColor;
       ctx.beginPath();
@@ -1981,9 +2144,10 @@ function drawBulkPreview() {
   const bulkOutsideNote = bulkOutsideCount > 0 ? ` | ${bulkOutsideCount} outside well` : "";
   setPreviewMeta([
     `Bulk: ${selected.length} well${selected.length === 1 ? "" : "s"}`,
+    `${plateType.label}`,
     `Ref ${refParams.well}`,
     `grid ${formatCoordMm(Math.max(0, (refParams.perRow - 1) * refParams.spacingX))} × ${formatCoordMm(Math.max(0, (Math.ceil(refParams.numDots / refParams.perRow) - 1) * refParams.spacingY))} mm`,
-    `Ø ${WELL_DIAM_MM.toFixed(1)} mm${bulkOutsideNote}`,
+    `Ø ${wellDiamMm.toFixed(1)} mm${bulkOutsideNote}`,
   ].join(" | "));
   drawBulkDetailPreview();
 }
@@ -1991,10 +2155,12 @@ function drawBulkPreview() {
 function drawCirclePreview() {
   prepareExportState();
   const params = collectCircleParams();
+  const plateTypeId = params.plateTypeId || getCurrentPlateTypeId();
+  const wellDiamMm = getWellDiamMm(plateTypeId);
   const canvas = el.canvasCircle || el.canvasStd;
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
-  const refCenter = DEFAULT_24WELL_CENTERS[params.well] || DEFAULT_24WELL_CENTERS.A1;
+  const refCenter = getWellCenterMm(params.well, plateTypeId);
   const refCx = refCenter[0];
   const refCy = refCenter[1];
   const cw = canvas.width;
@@ -2003,8 +2169,8 @@ function drawCirclePreview() {
   const pxCenterY = ch / 2;
   const margin = 20;
   const usablePx = Math.min(cw, ch) - (2 * margin);
-  const scale = usablePx / WELL_DIAM_MM;
-  const rPx = (WELL_DIAM_MM / 2) * scale;
+  const scale = usablePx / wellDiamMm;
+  const rPx = (wellDiamMm / 2) * scale;
   const dotR = 3.5;
 
   const positions = dotsFromAbsCoords(
@@ -2014,7 +2180,8 @@ function drawCirclePreview() {
     refCy,
     pxCenterX,
     pxCenterY,
-    scale
+    scale,
+    plateTypeId
   );
 
   ctx.clearRect(0, 0, cw, ch);
@@ -2053,15 +2220,13 @@ function drawCirclePreview() {
   const homeWell = wellToCanvas(params.well, refCx, refCy, pxCenterX, pxCenterY, scale);
   drawXYHomeIndicator(ctx, homeWell.px - rPx, homeWell.py + rPx);
   drawPreviewLegend(ctx, cw, ch, {
-    showPrint2: false,
-    showOverlap: false,
     showOutside: positions.some((dot) => dot.outsideWell),
   });
 
   setPreviewMeta([
     `Well ${params.well} | Circle R ${formatCoordMm(params.radiusMm)} mm`,
     `${positions.length} dots @ ${params.startAngleDeg.toFixed(0)}° start`,
-    `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideWellMetaNote(positions)}`,
+    `Ø ${wellDiamMm.toFixed(1)} mm${outsideWellMetaNote(positions)}`,
   ].join(" | "));
 }
 
@@ -2077,6 +2242,8 @@ function drawPreview() {
   }
 
   const print1 = collectPrint1Params();
+  const plateTypeId = print1.plateTypeId || getCurrentPlateTypeId();
+  const wellDiamMm = getWellDiamMm(plateTypeId);
   const multi = isSecondPassEnabled();
   const view = getPreviewView();
   const showPrint1Layer = view === "1" || view === "both";
@@ -2092,7 +2259,7 @@ function drawPreview() {
     : [];
   const drawableExtra = extraLayers.filter((layer) => !layer.params.offsetInvalid);
 
-  const refWell = DEFAULT_24WELL_CENTERS[print1.well] || DEFAULT_24WELL_CENTERS.A1;
+  const refWell = getWellCenterMm(print1.well, plateTypeId);
   const refCx = refWell[0];
   const refCy = refWell[1];
 
@@ -2105,8 +2272,8 @@ function drawPreview() {
   const pxCenterY = ch / 2;
   const margin = 20;
   const usablePx = Math.min(cw, ch) - (2 * margin);
-  const scale = usablePx / WELL_DIAM_MM;
-  const rPx = (WELL_DIAM_MM / 2) * scale;
+  const scale = usablePx / wellDiamMm;
+  const rPx = (wellDiamMm / 2) * scale;
   const dotR = 3.5;
 
   const print1Data = computeDotPositions(
@@ -2219,22 +2386,22 @@ function drawPreview() {
   const invalidExtra = extraLayers.find((l) => l.params?.offsetInvalid);
   if (invalidExtra && (view === "both" || view === String(invalidExtra.printNum))) {
     setPreviewMeta(
-      `${wellLabel} | Print ${invalidExtra.printNum} hidden until Y offset values are valid | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`
+      `${wellLabel} | Print ${invalidExtra.printNum} hidden until Y offset values are valid | Ø ${wellDiamMm.toFixed(1)} mm${outsideNote}`
     );
   } else if (view === "both" && multi) {
     setPreviewMeta([
       `${wellLabel} | ${passSummaries.length} pass(es)`,
       passMeta,
-      `Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`,
+      `Ø ${wellDiamMm.toFixed(1)} mm${outsideNote}`,
     ].filter(Boolean).join(" | "));
   } else if (view !== "1" && visibleExtra[0]) {
     const layer = visibleExtra[0];
     setPreviewMeta(
-      `${wellLabel} | Pass ${layer.printNum} grid ${formatCoordMm(layer.data.gridWmm)} × ${formatCoordMm(layer.data.gridHmm)} mm | ${passMeta} | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`
+      `${wellLabel} | Pass ${layer.printNum} grid ${formatCoordMm(layer.data.gridWmm)} × ${formatCoordMm(layer.data.gridHmm)} mm | ${passMeta} | Ø ${wellDiamMm.toFixed(1)} mm${outsideNote}`
     );
   } else {
     setPreviewMeta(
-      `${wellLabel} | Pass 1 grid ${formatCoordMm(print1Data.gridWmm)} × ${formatCoordMm(print1Data.gridHmm)} mm | ${passMeta} | Ø ${WELL_DIAM_MM.toFixed(1)} mm${outsideNote}`
+      `${wellLabel} | Pass 1 grid ${formatCoordMm(print1Data.gridWmm)} × ${formatCoordMm(print1Data.gridHmm)} mm | ${passMeta} | Ø ${wellDiamMm.toFixed(1)} mm${outsideNote}`
     );
   }
 }
@@ -2249,7 +2416,8 @@ function onPrint1GridLayoutInput() {
 }
 
 function onExtraPrintGridLayoutInput(printNum) {
-  const fields = ExtraPrintUI.fieldTarget(printNum);
+  const fields = extraPrintFieldTarget(printNum);
+  if (!fields?.dots || !fields?.perRow || !fields?.rows) return;
   syncGridDotsFromLayout(fields.dots, fields.perRow, fields.rows);
   drawPreview();
 }
@@ -2356,14 +2524,34 @@ async function savePrint1Gcode() {
 
 async function saveExtraPrintGcode(printNum) {
   prepareExportState();
-  const fields = ExtraPrintUI.fieldTarget(printNum);
-  const passErr = validatePassSettings(fields);
+  if (!ExtraPrintUI) {
+    reportSaveFailure(createUserIssue({
+      id: "MULTI_PRINT_UNAVAILABLE",
+      title: "Multi-print unavailable",
+      message: "Multi-print UI failed to load. Reload the app or reinstall from Releases.",
+      fields: [],
+      focusId: null,
+    }), "Multi-print unavailable.");
+    return;
+  }
+  const fields = extraPrintFieldTarget(printNum);
+  const passErr = validatePassSettingsSafe(fields);
   if (passErr) {
     reportSaveFailure(issueForPassSettings(passErr, `print${printNum}`), passErr);
     return;
   }
   const print2 = collectExtraPrintParams(printNum);
-  if (print2?.offsetInvalid) {
+  if (!print2) {
+    reportSaveFailure(createUserIssue({
+      id: "MULTI_PRINT_PARAMS",
+      title: `Print ${printNum} settings unavailable`,
+      message: "Could not read Print pass settings. Reload the app and try again.",
+      fields: [],
+      focusId: null,
+    }), "Print pass settings unavailable.");
+    return;
+  }
+  if (print2.offsetInvalid) {
     const angleErr = validateAngleOffsetFor(printNum) || "Error: Y offset settings are invalid.";
     reportSaveFailure(issueForAngleOffset(angleErr, printNum), angleErr);
     return;
@@ -2373,7 +2561,7 @@ async function saveExtraPrintGcode(printNum) {
     reportSaveFailure(issueForValidationError(err2, {
       printNum,
       passTarget: `print${printNum}`,
-      focusId: ExtraPrintUI.isOffsetEnabled(printNum) ? `p${printNum}-offset-max` : `p${printNum}-start-x`,
+      focusId: extraPrintIsOffsetEnabled(printNum) ? `p${printNum}-offset-max` : `p${printNum}-start-x`,
     }), err2);
     return;
   }
@@ -2403,14 +2591,25 @@ async function saveCombinedGcode() {
   }
 
   for (const printNum of getExtraPassList()) {
-    const fields = ExtraPrintUI.fieldTarget(printNum);
-    const passErr = validatePassSettings(fields);
+    if (!ExtraPrintUI) break;
+    const fields = extraPrintFieldTarget(printNum);
+    const passErr = validatePassSettingsSafe(fields);
     if (passErr) {
       reportSaveFailure(issueForPassSettings(passErr, `print${printNum}`), passErr);
       return;
     }
     const params = collectExtraPrintParams(printNum);
-    if (params?.offsetInvalid) {
+    if (!params) {
+      reportSaveFailure(createUserIssue({
+        id: "MULTI_PRINT_PARAMS",
+        title: `Print ${printNum} settings unavailable`,
+        message: "Could not read Print pass settings. Reload the app and try again.",
+        fields: [],
+        focusId: null,
+      }), "Print pass settings unavailable.");
+      return;
+    }
+    if (params.offsetInvalid) {
       const angleErr = validateAngleOffsetFor(printNum) || "Error: Y offset settings are invalid.";
       reportSaveFailure(issueForAngleOffset(angleErr, printNum), angleErr);
       return;
@@ -2420,7 +2619,7 @@ async function saveCombinedGcode() {
       reportSaveFailure(issueForValidationError(errN, {
         printNum,
         passTarget: `print${printNum}`,
-        focusId: ExtraPrintUI.isOffsetEnabled(printNum) ? `p${printNum}-offset-max` : `p${printNum}-start-x`,
+        focusId: extraPrintIsOffsetEnabled(printNum) ? `p${printNum}-offset-max` : `p${printNum}-start-x`,
       }), errN);
       return;
     }
@@ -2555,8 +2754,25 @@ async function saveBulkGcodeIndividual() {
   }
 }
 
-function populateWells() {
-  Object.keys(DEFAULT_24WELL_STARTS).forEach((well) => {
+function populatePlateTypes() {
+  if (!el.plateType) return;
+  el.plateType.innerHTML = "";
+  PLATE_TYPE_OPTIONS.forEach(({ id, label }) => {
+    const option = document.createElement("option");
+    option.value = id;
+    option.textContent = label;
+    el.plateType.appendChild(option);
+  });
+  el.plateType.value = DEFAULT_PLATE_TYPE;
+}
+
+let plateTypeSwitchInProgress = false;
+
+function populateWells(plateTypeId = getCurrentPlateTypeId()) {
+  if (!el.well) return;
+  const starts = getWellStarts(plateTypeId);
+  el.well.innerHTML = "";
+  Object.keys(starts).forEach((well) => {
     const option = document.createElement("option");
     option.value = well;
     option.textContent = well;
@@ -2566,11 +2782,13 @@ function populateWells() {
   syncWellNumberFromDropdown();
 }
 
-function buildBulkWellGrid() {
+function buildBulkWellGrid(plateTypeId = getCurrentPlateTypeId()) {
   if (!el.bulkWellGrid) return;
+  const plateType = getPlateType(plateTypeId);
   el.bulkWellGrid.innerHTML = "";
-  ROW_KEYS.forEach((rowKey) => {
-    COL_KEYS.forEach((colKey) => {
+  el.bulkWellGrid.style.gridTemplateColumns = `repeat(${plateType.bulkGridCols}, minmax(0, 1fr))`;
+  plateType.rowKeys.forEach((rowKey) => {
+    plateType.colKeys.forEach((colKey) => {
       const wellKey = `${rowKey}${colKey}`;
       const cell = document.createElement("div");
       cell.className = "bulk-well-cell";
@@ -2592,6 +2810,43 @@ function buildBulkWellGrid() {
     });
   });
   updateBulkSelectionCount();
+}
+
+function onPlateTypeChange(event) {
+  const plateTypeId = event?.target?.value || getCurrentPlateTypeId();
+  plateTypeSwitchInProgress = true;
+  try {
+    populateWells(plateTypeId);
+    buildBulkWellGrid(plateTypeId);
+    const wellKey = el.well.value;
+    multiPatternLastWell = wellKey;
+    bulkPatternLastWell = wellKey;
+    standardPatternLastWell = wellKey;
+    circlePatternLastWell = wellKey;
+
+    setDefaultsFromCurrentWell(plateTypeId);
+    setCircleCenterToWell(wellKey, plateTypeId);
+    refreshAllStoredStartsDropdowns(plateTypeId);
+    if (el.circleDots) el.circleDots.value = "12";
+    if (el.circleRadius) el.circleRadius.value = "3";
+    if (el.circleStartAngle) el.circleStartAngle.value = "0";
+
+    if (ExtraPrintUI) {
+      ExtraPrintUI.resetPasses();
+      ExtraPrintUI.init(el.extraPrintsContainer, getExtraPrintUICallbacks());
+      setAllExtraPrintDefaults();
+      ExtraPrintUI.syncPreviewTargetOptions(el.previewTarget);
+    }
+    setAllBulkWellsChecked(false);
+    setBulkWellChecked(wellKey, true);
+    updateBulkSelectionCount();
+    if (el.bulkRefWellLabel) el.bulkRefWellLabel.textContent = wellKey;
+    if (el.keepMultiPatternMetrics) el.keepMultiPatternMetrics.checked = false;
+    updateModeUi();
+    drawPreview();
+  } finally {
+    plateTypeSwitchInProgress = false;
+  }
 }
 
 function initCirclePrint() {
@@ -2649,13 +2904,16 @@ function initBulkPrint() {
 }
 
 function snapExtraPrintToWell(printNum) {
-  const fields = ExtraPrintUI.fieldTarget(printNum);
+  const fields = extraPrintFieldTarget(printNum);
+  if (!fields?.startX) return;
+  const plateTypeId = getCurrentPlateTypeId();
   const [sx, sy] = startPositionForCenterDotAtWellCenter(
     el.well.value,
     safeInt(fields.dots?.value),
     safeInt(fields.perRow?.value),
     safeFloat(fields.spacingX?.value),
-    safeFloat(fields.spacingY?.value)
+    safeFloat(fields.spacingY?.value),
+    plateTypeId
   );
   fields.startX.value = sx.toFixed(2);
   fields.startY.value = sy.toFixed(2);
@@ -2693,7 +2951,12 @@ function getExtraPrintUICallbacks() {
 }
 
 function initMultiPrint() {
-  if (!ExtraPrintUI || !el.extraPrintsContainer) return;
+  if (!el.extraPrintsContainer) return;
+  if (!ExtraPrintUI) {
+    el.extraPrintsContainer.innerHTML =
+      '<p class="note">Multi-print UI failed to load. Reload the app or reinstall from Releases.</p>';
+    return;
+  }
 
   ExtraPrintUI.init(el.extraPrintsContainer, getExtraPrintUICallbacks());
 
@@ -2709,6 +2972,7 @@ function initMultiPrint() {
       return;
     }
     setExtraPrintDefaults(added);
+    setupExtraPassStoredStarts(added);
     ExtraPrintUI.syncPreviewTargetOptions(el.previewTarget);
     syncEcalcApplyButtons();
     updateModeUi();
@@ -2775,6 +3039,7 @@ function applyEcalcToExtrusion(targetPass, printNum = 2) {
 
 function bootApp() {
   try {
+    populatePlateTypes();
     populateWells();
     multiPatternLastWell = el.well.value;
     bulkPatternLastWell = el.well.value;
@@ -2783,10 +3048,14 @@ function bootApp() {
     document.body.dataset.appMode = "standard";
     initUserIssueModal();
     initMultiPrint();
+    initStoredStartsDropdowns();
     initBulkPrint();
     initCirclePrint();
     setDefaultsFromCurrentWell();
     initTabs();
+    if (el.plateType) {
+      el.plateType.addEventListener("change", onPlateTypeChange);
+    }
     updateEcalc();
     drawPreview();
   } catch (err) {
@@ -2798,6 +3067,7 @@ function bootApp() {
 bootApp();
 
 el.well.addEventListener("change", () => {
+  if (plateTypeSwitchInProgress) return;
   const newWellKey = el.well.value;
   syncWellNumberFromDropdown();
   if (isCirclePrintEnabled()) {
@@ -2812,6 +3082,7 @@ el.well.addEventListener("change", () => {
     onStandardPatternWellChange(newWellKey);
   }
   if (el.bulkRefWellLabel) el.bulkRefWellLabel.textContent = newWellKey;
+  syncStoredStartsPickersForWell(newWellKey);
   drawPreview();
 });
 if (el.keepMultiPatternMetrics) {
@@ -2823,12 +3094,14 @@ if (el.keepMultiPatternMetrics) {
   });
 }
 el.snap.addEventListener("click", () => {
+  const plateTypeId = getCurrentPlateTypeId();
   const [sx, sy] = startPositionForCenterDotAtWellCenter(
     el.well.value,
     safeInt(el.dots.value),
     safeInt(el.perRow.value),
     safeFloat(el.spacingX.value),
-    safeFloat(el.spacingY.value)
+    safeFloat(el.spacingY.value),
+    plateTypeId
   );
   el.startX.value = sx.toFixed(2);
   el.startY.value = sy.toFixed(2);
@@ -2839,8 +3112,6 @@ el.reset.addEventListener("click", () => {
     applyCircleDefaults(el.well.value);
   } else {
     setDefaultsFromCurrentWell();
-  }
-  if (el.circleCenterX) {
     applyCircleDefaults(el.well.value);
   }
   if (ExtraPrintUI) {
@@ -2848,6 +3119,7 @@ el.reset.addEventListener("click", () => {
     ExtraPrintUI.init(el.extraPrintsContainer, getExtraPrintUICallbacks());
     setAllExtraPrintDefaults();
     ExtraPrintUI.syncPreviewTargetOptions(el.previewTarget);
+    refreshAllStoredStartsDropdowns();
   }
   el.previewTarget.value = "both";
   if (el.keepMultiPatternMetrics) el.keepMultiPatternMetrics.checked = false;
@@ -2859,6 +3131,7 @@ el.reset.addEventListener("click", () => {
   setBulkWellChecked(el.well.value, true);
   updateBulkSelectionCount();
   updateModeUi();
+  refreshAllStoredStartsDropdowns();
   drawPreview();
   el.saveStatus.textContent = "";
 });

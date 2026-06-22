@@ -236,6 +236,47 @@ describe("translateStartForWell", () => {
   });
 });
 
+describe("plate types", () => {
+  const {
+    PLATE_TYPES,
+    WELL_POSITIONS_48,
+    WELL_POSITIONS_12,
+    WELL_POSITIONS_PEN,
+    getWellStarts,
+    getWellCenters,
+    sortWellKeys,
+  } = core;
+
+  it("defines expected well counts", () => {
+    assert.equal(Object.keys(WELL_POSITIONS_48).length, 48);
+    assert.equal(Object.keys(WELL_POSITIONS_12).length, 12);
+    assert.equal(Object.keys(WELL_POSITIONS_PEN).length, 3);
+  });
+
+  it("derives centers from starts with 24-well offset", () => {
+    const [sx, sy] = WELL_POSITIONS_48.A1;
+    const [cx, cy] = getWellCenters("48well").A1;
+    assert.ok(Math.abs(cx - (sx + 1.35)) < 0.001);
+    assert.ok(Math.abs(cy - (sy + 1.5)) < 0.001);
+  });
+
+  it("translates starts within 48-well plate", () => {
+    const starts = getWellStarts("48well");
+    const [tx, ty] = translateStartForWell("A1", "F8", starts.A1[0], starts.A1[1], "48well");
+    assert.deepEqual([tx, ty], starts.F8);
+  });
+
+  it("sorts well keys by plate row and column order", () => {
+    assert.deepEqual(sortWellKeys(["B2", "A1", "A2"], "12well"), ["A1", "A2", "B2"]);
+  });
+
+  it("uses plate-specific well diameters", () => {
+    assert.equal(PLATE_TYPES["48well"].wellDiamMm, 11);
+    assert.equal(PLATE_TYPES["12well"].wellDiamMm, 22);
+    assert.equal(PLATE_TYPES.pen.wellDiamMm, 12);
+  });
+});
+
 describe("applyProgressiveYOffset", () => {
   it("keeps X aligned with print 1 and ramps Y across row", () => {
     const print1Dots = computeGridDotsFromParams(defaultGridParams({ numDots: 20, perRow: 10 }));

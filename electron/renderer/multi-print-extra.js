@@ -112,6 +112,10 @@
               <p class="note print-2-pattern-note">
                 Separate Start X/Y, dots, and spacing for pass ${printNum}.
               </p>
+              <label for="p${printNum}-stored-starts">Stored well starts</label>
+              <select id="p${printNum}-stored-starts" class="stored-well-starts-select" aria-label="Stored well starts for selected plate">
+                <option value="">Select stored start…</option>
+              </select>
               <label>Start X (mm)</label>
               <input id="p${printNum}-start-x" type="number" step="0.01" />
               <label>Start Y (mm)</label>
@@ -213,6 +217,7 @@
     ].forEach((inp) => inp?.addEventListener("input", () => callbacks.onChange?.()));
 
     updateCardVisibility(printNum);
+    callbacks.onCardBound?.(printNum);
   }
 
   function renderAllCards() {

@@ -117,6 +117,15 @@ body {
   margin-top: 6px;
 }
 
+.controls .stored-well-starts-select {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.controls .stored-starts-circle-note {
+  margin: 6px 0 0;
+}
+
 .controls .checkbox {
   display: flex;
   align-items: center;
@@ -446,7 +455,6 @@ body[data-app-mode="circle-print"] #circle-preview-wrap {
 
 .bulk-well-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
 }
 

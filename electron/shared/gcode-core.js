@@ -54,6 +54,129 @@
 
   const DEFAULT_24WELL_STARTS = build24WellMap(A1_START[0], A1_START[1]);
   const DEFAULT_24WELL_CENTERS = build24WellMap(A1_CENTER[0], A1_CENTER[1]);
+  const CENTER_OFFSET_FROM_START = [
+    A1_CENTER[0] - A1_START[0],
+    A1_CENTER[1] - A1_START[1],
+  ];
+
+  const WELL_POSITIONS_48 = {
+    A1: [33.55, 48.6], A2: [33.55, 61.6], A3: [33.55, 74.6], A4: [33.55, 87.6],
+    A5: [33.55, 100.6], A6: [33.55, 113.6], A7: [33.55, 126.6], A8: [33.55, 139.6],
+    B1: [46.55, 48.6], B2: [46.55, 61.6], B3: [46.55, 74.6], B4: [46.55, 87.6],
+    B5: [46.55, 100.6], B6: [46.55, 113.6], B7: [46.55, 126.6], B8: [46.55, 139.6],
+    C1: [59.55, 48.6], C2: [59.55, 61.6], C3: [59.55, 74.6], C4: [59.55, 87.6],
+    C5: [59.55, 100.6], C6: [59.55, 113.6], C7: [59.55, 126.6], C8: [59.55, 139.6],
+    D1: [72.55, 48.6], D2: [72.55, 61.6], D3: [72.55, 74.6], D4: [72.55, 87.6],
+    D5: [72.55, 100.6], D6: [72.55, 113.6], D7: [72.55, 126.6], D8: [72.55, 139.6],
+    E1: [85.55, 48.6], E2: [85.55, 61.6], E3: [85.55, 74.6], E4: [85.55, 87.6],
+    E5: [85.55, 100.6], E6: [85.55, 113.6], E7: [85.55, 126.6], E8: [85.55, 139.6],
+    F1: [98.55, 48.6], F2: [98.55, 61.6], F3: [98.55, 74.6], F4: [98.55, 87.6],
+    F5: [98.55, 100.6], F6: [98.55, 113.6], F7: [98.55, 126.6], F8: [98.55, 139.6],
+  };
+
+  const WELL_POSITIONS_12 = {
+    A1: [84.3, 40.05], A2: [84.3, 66.06], A3: [84.3, 92.07], A4: [84.3, 118.08],
+    B1: [110.31, 40.05], B2: [110.31, 66.06], B3: [110.31, 92.07], B4: [110.31, 118.08],
+    C1: [136.32, 40.05], C2: [136.32, 66.06], C3: [136.32, 92.07], C4: [136.32, 118.08],
+  };
+
+  const WELL_POSITIONS_PEN = {
+    A1: [42.9, 15.05],
+    B1: [57.9, 15.05],
+    C1: [72.9, 15.05],
+  };
+
+  function deriveCentersFromStarts(starts) {
+    const centers = {};
+    Object.entries(starts).forEach(([wellKey, [sx, sy]]) => {
+      centers[wellKey] = [
+        sx + CENTER_OFFSET_FROM_START[0],
+        sy + CENTER_OFFSET_FROM_START[1],
+      ];
+    });
+    return centers;
+  }
+
+  const DEFAULT_PLATE_TYPE = "24well";
+
+  const PLATE_TYPES = {
+    "24well": {
+      id: "24well",
+      label: "24-well",
+      rowKeys: ["A", "B", "C", "D"],
+      colKeys: [1, 2, 3, 4, 5, 6],
+      bulkGridCols: 6,
+      wellStarts: DEFAULT_24WELL_STARTS,
+      wellCenters: DEFAULT_24WELL_CENTERS,
+      wellDiamMm: 14.5,
+    },
+    "48well": {
+      id: "48well",
+      label: "48-well",
+      rowKeys: ["A", "B", "C", "D", "E", "F"],
+      colKeys: [1, 2, 3, 4, 5, 6, 7, 8],
+      bulkGridCols: 8,
+      wellStarts: WELL_POSITIONS_48,
+      wellCenters: deriveCentersFromStarts(WELL_POSITIONS_48),
+      wellDiamMm: 11,
+    },
+    "12well": {
+      id: "12well",
+      label: "12-well",
+      rowKeys: ["A", "B", "C"],
+      colKeys: [1, 2, 3, 4],
+      bulkGridCols: 4,
+      wellStarts: WELL_POSITIONS_12,
+      wellCenters: deriveCentersFromStarts(WELL_POSITIONS_12),
+      wellDiamMm: 22,
+    },
+    pen: {
+      id: "pen",
+      label: "PEN membrane",
+      rowKeys: ["A", "B", "C"],
+      colKeys: [1],
+      bulkGridCols: 1,
+      wellStarts: WELL_POSITIONS_PEN,
+      wellCenters: deriveCentersFromStarts(WELL_POSITIONS_PEN),
+      wellDiamMm: 12,
+    },
+  };
+
+  const PLATE_TYPE_OPTIONS = Object.values(PLATE_TYPES).map(({ id, label }) => ({ id, label }));
+
+  function normalizePlateTypeId(plateTypeId) {
+    return PLATE_TYPES[plateTypeId] ? plateTypeId : DEFAULT_PLATE_TYPE;
+  }
+
+  function getPlateType(plateTypeId = DEFAULT_PLATE_TYPE) {
+    return PLATE_TYPES[normalizePlateTypeId(plateTypeId)];
+  }
+
+  function getWellStarts(plateTypeId = DEFAULT_PLATE_TYPE) {
+    return getPlateType(plateTypeId).wellStarts;
+  }
+
+  function getWellCenters(plateTypeId = DEFAULT_PLATE_TYPE) {
+    return getPlateType(plateTypeId).wellCenters;
+  }
+
+  function getWellDiamMm(plateTypeId = DEFAULT_PLATE_TYPE) {
+    return getPlateType(plateTypeId).wellDiamMm;
+  }
+
+  function getWellRadiusMm(plateTypeId = DEFAULT_PLATE_TYPE) {
+    return getWellDiamMm(plateTypeId) / 2;
+  }
+
+  function sortWellKeys(wellKeys, plateTypeId = DEFAULT_PLATE_TYPE) {
+    const plate = getPlateType(plateTypeId);
+    return [...wellKeys].sort((a, b) => {
+      const rowA = plate.rowKeys.indexOf(a[0]);
+      const rowB = plate.rowKeys.indexOf(b[0]);
+      if (rowA !== rowB) return rowA - rowB;
+      return Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10);
+    });
+  }
 
   function safeInt(v) {
     const n = Number.parseInt(v, 10);
@@ -77,12 +200,20 @@
     return n === null ? 0 : n;
   }
 
-  function getWellCenterMm(wellKey) {
-    return DEFAULT_24WELL_CENTERS[wellKey] || DEFAULT_24WELL_CENTERS.A1;
+  function getWellCenterMm(wellKey, plateTypeId = DEFAULT_PLATE_TYPE) {
+    const centers = getWellCenters(plateTypeId);
+    return centers[wellKey] || centers.A1;
   }
 
-  function startPositionForCenterDotAtWellCenter(wellKey, numDots, dotsPerRow, spacingX, spacingY) {
-    const [wcx, wcy] = getWellCenterMm(wellKey);
+  function startPositionForCenterDotAtWellCenter(
+    wellKey,
+    numDots,
+    dotsPerRow,
+    spacingX,
+    spacingY,
+    plateTypeId = DEFAULT_PLATE_TYPE
+  ) {
+    const [wcx, wcy] = getWellCenterMm(wellKey, plateTypeId);
     if (dotsPerRow <= 0) return [wcx, wcy];
     const rows = Math.ceil(numDots / dotsPerRow);
     const centerCol = (dotsPerRow - 1) / 2;
@@ -90,9 +221,9 @@
     return [wcx - centerCol * spacingX, wcy - centerRow * spacingY];
   }
 
-  function isDotInsideWellMm(absX, absY, wellKey) {
-    const [cx, cy] = getWellCenterMm(wellKey);
-    return Math.hypot(absX - cx, absY - cy) <= WELL_RADIUS_MM;
+  function isDotInsideWellMm(absX, absY, wellKey, plateTypeId = DEFAULT_PLATE_TYPE) {
+    const [cx, cy] = getWellCenterMm(wellKey, plateTypeId);
+    return Math.hypot(absX - cx, absY - cy) <= getWellRadiusMm(plateTypeId);
   }
 
   function computeGridDotsFromParams(params) {
@@ -117,17 +248,20 @@
     return computeGridDotsFromParams(params);
   }
 
-  function countDotsOutsideWell(params, wellKey = params.well) {
+  function countDotsOutsideWell(params, wellKey = params.well, plateTypeId = DEFAULT_PLATE_TYPE) {
+    const plateId = params.plateTypeId || plateTypeId;
     return resolveParamsDots(params).filter(
-      (dot) => !isDotInsideWellMm(dot.absX, dot.absY, wellKey)
+      (dot) => !isDotInsideWellMm(dot.absX, dot.absY, wellKey, plateId)
     ).length;
   }
 
-  function validateDotsInsideWell(params, wellKey = params.well) {
-    const outsideCount = countDotsOutsideWell(params, wellKey);
+  function validateDotsInsideWell(params, wellKey = params.well, plateTypeId = DEFAULT_PLATE_TYPE) {
+    const plateId = params.plateTypeId || plateTypeId;
+    const outsideCount = countDotsOutsideWell(params, wellKey, plateId);
     if (outsideCount === 0) return null;
     const noun = outsideCount === 1 ? "dot falls" : "dots fall";
-    return `Error: ${outsideCount} ${noun} outside well ${wellKey} (Ø ${WELL_DIAM_MM} mm). Adjust start position, spacing, or circle radius.`;
+    const wellDiamMm = getWellDiamMm(plateId);
+    return `Error: ${outsideCount} ${noun} outside well ${wellKey} (Ø ${wellDiamMm} mm). Adjust start position, spacing, or circle radius.`;
   }
 
   function applyProgressiveYOffset(baseDots, print1Dots, perRow, minDist, maxDist, sign = 1) {
@@ -155,9 +289,16 @@
     return dots;
   }
 
-  function translateStartForWell(refWell, targetWell, refStartX, refStartY) {
-    const refDefault = DEFAULT_24WELL_STARTS[refWell] || DEFAULT_24WELL_STARTS.A1;
-    const targetDefault = DEFAULT_24WELL_STARTS[targetWell] || DEFAULT_24WELL_STARTS.A1;
+  function translateStartForWell(
+    refWell,
+    targetWell,
+    refStartX,
+    refStartY,
+    plateTypeId = DEFAULT_PLATE_TYPE
+  ) {
+    const starts = getWellStarts(plateTypeId);
+    const refDefault = starts[refWell] || starts.A1;
+    const targetDefault = starts[targetWell] || starts.A1;
     const deltaX = refStartX - refDefault[0];
     const deltaY = refStartY - refDefault[1];
     return [targetDefault[0] + deltaX, targetDefault[1] + deltaY];
@@ -212,6 +353,8 @@
   }
 
   function validateCircleParams(params) {
+    const plateId = params.plateTypeId || DEFAULT_PLATE_TYPE;
+    const wellRadiusMm = getWellRadiusMm(plateId);
     if (!params.wellNumber) return "Error: Well number required.";
     if (params.numDots <= 0) return "Error: Number of dots must be > 0.";
     if (params.numDots > MAX_GRID_DOTS) {
@@ -220,8 +363,8 @@
     if (params.radiusMm < 0) return "Error: Circle radius cannot be negative.";
     const passErr = validatePassSettingsFromValues(params.lowerZ, params.upperZ, params.extrusionE);
     if (passErr) return passErr;
-    if (params.radiusMm > WELL_RADIUS_MM) {
-      return `Error: Radius exceeds well (${formatCoordMm(WELL_RADIUS_MM)} mm max).`;
+    if (params.radiusMm > wellRadiusMm) {
+      return `Error: Radius exceeds well (${formatCoordMm(wellRadiusMm)} mm max).`;
     }
     return validateDotsInsideWell(params);
   }
@@ -346,6 +489,20 @@
     formatGcodeXY,
     DEFAULT_24WELL_STARTS,
     DEFAULT_24WELL_CENTERS,
+    DEFAULT_PLATE_TYPE,
+    PLATE_TYPES,
+    PLATE_TYPE_OPTIONS,
+    WELL_POSITIONS_48,
+    WELL_POSITIONS_12,
+    WELL_POSITIONS_PEN,
+    CENTER_OFFSET_FROM_START,
+    getPlateType,
+    getWellStarts,
+    getWellCenters,
+    getWellDiamMm,
+    getWellRadiusMm,
+    sortWellKeys,
+    normalizePlateTypeId,
     build24WellMap,
     safeInt,
     safeFloat,

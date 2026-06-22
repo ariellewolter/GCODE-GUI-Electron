@@ -94,11 +94,15 @@ app.whenReady().then(() => {
       return { cancelled: false, error: true, message: "Invalid save payload." };
     }
     const { defaultFileName, contents } = payload;
+    const safeFileName = path.basename(defaultFileName);
+    if (!safeFileName || safeFileName === "." || safeFileName === "..") {
+      return { cancelled: false, error: true, message: "Invalid file name." };
+    }
     const parentWindow = parentWindowFromEvent(event);
     if (parentWindow) parentWindow.focus();
     const response = await dialog.showSaveDialog(parentWindow, {
       title: "Save G-code as",
-      defaultPath: path.join(loadLastPath(), defaultFileName),
+      defaultPath: path.join(loadLastPath(), safeFileName),
       filters: [{ name: "G-code files", extensions: ["txt"] }],
     });
 
@@ -141,7 +145,11 @@ app.whenReady().then(() => {
     const paths = [];
     try {
       files.forEach(({ fileName, contents }) => {
-        const filePath = path.join(dir, fileName);
+        const safeName = path.basename(fileName);
+        if (!safeName || safeName === "." || safeName === "..") {
+          throw new Error(`Invalid file name: ${fileName}`);
+        }
+        const filePath = path.join(dir, safeName);
         fs.writeFileSync(filePath, contents, "utf8");
         paths.push(filePath);
       });

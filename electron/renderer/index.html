@@ -66,6 +66,8 @@
           <h2 class="multi-only">Print 1</h2>
           <h2 class="bulk-only">Pattern settings</h2>
           <h2 class="circle-only">Circle settings</h2>
+          <label id="plate-type-label">Plate type</label>
+          <select id="plate-type" aria-label="Plate type"></select>
           <p id="print-1-pattern-note" class="note multi-only" hidden>
             Start X/Y, dots, rows, and spacing below are Print 1 (also used for pass 2 when Y offset is on).
           </p>
@@ -73,6 +75,11 @@
           <select id="well"></select>
 
           <div id="print-1-pattern" class="standard-grid-only print-1-pattern">
+            <label for="stored-starts-print1">Stored well starts</label>
+            <select id="stored-starts-print1" class="stored-well-starts-select" aria-label="Stored well starts for selected plate">
+              <option value="">Select stored start…</option>
+            </select>
+
             <label>Start X (mm)</label>
             <input id="start-x" type="number" step="0.01" />
 
@@ -96,6 +103,12 @@
           </div>
 
           <div class="circle-print-section circle-only">
+            <label for="stored-starts-circle">Stored well starts</label>
+            <select id="stored-starts-circle" class="stored-well-starts-select" aria-label="Stored well starts for selected plate">
+              <option value="">Select stored start…</option>
+            </select>
+            <p class="note stored-starts-circle-note">Lists plate start coordinates; selection applies the matching well center to circle X/Y.</p>
+
             <label>Circle center X (mm)</label>
             <input id="circle-center-x" type="number" step="0.01" />
 
