@@ -2,7 +2,7 @@
 
 Desktop app for generating G-code for 24-well plate bioprinting, with live preview, multi-print, bulk print, and circle patterns.
 
-**Current release:** v2.0.19 · macOS (Intel + Apple Silicon)
+**Current release:** v2.0.21 · macOS (Intel + Apple Silicon) and Windows (x64)
 
 ## Download and run (other Macs)
 
@@ -32,7 +32,8 @@ The build is a **universal macOS app** (Apple Silicon and Intel). It is signed a
 |----------|--------|
 | macOS (Apple Silicon) | Supported via release DMG or ZIP |
 | macOS (Intel) | Supported via universal release DMG or ZIP |
-| Windows / Linux | Not available for the Electron app yet |
+| Windows (x64) | Supported via release `.exe` installer or ZIP |
+| Linux | Not available for the Electron app yet |
 
 ## Features
 
@@ -102,7 +103,7 @@ Output: `dist-electron/G-Code Generator-*-universal.dmg` and `dist-electron/G-Co
 Pushing a version tag triggers the GitHub Actions workflow (`.github/workflows/release-macos.yml`), which builds universal DMG and ZIP artifacts, signs/notarizes when secrets are set, auto-generates release notes, and uploads to Releases.
 
 ```bash
-git tag v2.0.19
+git tag v2.0.21
 git push origin main --tags
 ```
 
