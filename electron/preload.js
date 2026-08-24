@@ -5,4 +5,7 @@ contextBridge.exposeInMainWorld("gcodeApi", {
   saveGcodeFiles: (payload) => ipcRenderer.invoke("save-gcode-files", payload),
 });
 
-contextBridge.exposeInMainWorld("appInfo", { name: "G-Code Generator" });
+contextBridge.exposeInMainWorld(
+  "appInfo",
+  ipcRenderer.sendSync("get-app-info-sync") || { name: "G-Code Generator", version: "development" }
+);

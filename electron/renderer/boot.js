@@ -83,6 +83,10 @@ function loadCoreScript(onReady, onError) {
 }
 
 function startApp() {
+  const subtitle = document.getElementById("app-subtitle");
+  if (subtitle && window.appInfo?.version) {
+    subtitle.textContent = `Scientific G-code generation and experiment simulation · v${window.appInfo.version}`;
+  }
   if (!document.body.dataset.appMode) {
     document.body.dataset.appMode = "standard";
   }

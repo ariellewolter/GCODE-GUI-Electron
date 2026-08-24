@@ -68,7 +68,14 @@ function createWindow() {
       preload: resolvePreloadPath(),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    const target = new URL(url);
+    if (target.protocol !== "file:") event.preventDefault();
   });
 
   mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
@@ -89,6 +96,10 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  app.setAppUserModelId("com.ariellewolter.gcodegui");
+  ipcMain.on("get-app-info-sync", (event) => {
+    event.returnValue = { name: app.getName(), version: app.getVersion() };
+  });
   ipcMain.handle("save-gcode", async (event, payload) => {
     if (!payload || typeof payload.defaultFileName !== "string" || typeof payload.contents !== "string") {
       return { cancelled: false, error: true, message: "Invalid save payload." };
