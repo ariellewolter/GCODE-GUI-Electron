@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>G-Code Generator (Electron)</title>
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./simulator.css" />
   </head>
   <body data-app-mode="standard">
     <div class="app">
@@ -58,6 +59,17 @@
         >
           Circle print
         </button>
+        <button
+          type="button"
+          class="tab"
+          role="tab"
+          id="tab-btn-simulator"
+          aria-selected="false"
+          aria-controls="app-workspace"
+          data-tab="simulator"
+        >
+          Simulator
+        </button>
       </nav>
 
       <main id="app-workspace" class="layout" role="tabpanel">
@@ -66,6 +78,7 @@
           <h2 class="multi-only">Print 1</h2>
           <h2 class="bulk-only">Pattern settings</h2>
           <h2 class="circle-only">Circle settings</h2>
+          <h2 class="simulator-only">Motion simulator</h2>
           <label id="plate-type-label">Plate type</label>
           <select id="plate-type" aria-label="Plate type"></select>
           <p id="print-1-pattern-note" class="note multi-only" hidden>
@@ -128,6 +141,53 @@
             <button type="button" id="circle-snap-center">Center on well</button>
           </div>
 
+          <div id="simulator-settings" class="simulator-only simulator-settings">
+            <div class="simulator-perspective" role="group" aria-label="Simulator perspective">
+              <button type="button" id="simulator-mode-experiment" class="active" aria-pressed="true">Experiment view</button>
+              <button type="button" id="simulator-mode-machine" aria-pressed="false">Machine view</button>
+            </div>
+            <div class="simulator-source-picker">
+              <label for="simulator-source-mode">Load current G-code from</label>
+              <select id="simulator-source-mode">
+                <option value="standard">Standard</option>
+                <option value="multi-print">Multi print</option>
+                <option value="bulk-print">Bulk print</option>
+                <option value="circle-print">Circle print</option>
+              </select>
+              <button type="button" id="simulator-load-source" class="primary">Load current G-code</button>
+              <p class="note">Generates directly from that tab’s current settings. Saving a file is not required.</p>
+            </div>
+            <div class="simulator-hydrogel-settings">
+              <label for="simulator-hydrogel-volume">Hydrogel volume per well (µL)</label>
+              <input id="simulator-hydrogel-volume" type="number" min="0" step="10" value="700" />
+              <p id="simulator-hydrogel-height" class="note">Hydrogel height: calculating…</p>
+              <p class="note">Assumes a straight cylindrical well; 1 µL = 1 mm³.</p>
+              <div class="simulator-density-calibration">
+                <label for="simulator-needle-ratio">Needle ratio (mm/µL)</label>
+                <input id="simulator-needle-ratio" type="number" min="0.0001" step="0.001" value="1.05" />
+                <label for="simulator-cell-concentration">Cell concentration (cells/µL)</label>
+                <input id="simulator-cell-concentration" type="number" min="0" step="100" value="5000" />
+              </div>
+            </div>
+            <p id="simulator-source-label" class="note">No G-code loaded</p>
+            <div id="simulator-experiment-setup" class="simulator-experiment-setup" aria-live="polite"></div>
+            <div id="simulator-preflight" class="simulator-preflight" aria-live="polite"></div>
+            <div id="simulator-injections" class="simulator-injections"></div>
+            <div id="simulator-dropzone" class="gcode-import-dropzone simulator-machine-detail" role="button" tabindex="0">
+              <p class="gcode-import-dropzone-title">Drop G-code file here</p>
+              <p class="gcode-import-dropzone-hint">.txt, .gcode, .nc, or .tap</p>
+              <button type="button" id="simulator-open" class="primary">Choose file…</button>
+            </div>
+            <div class="gcode-import-actions simulator-machine-detail">
+              <p id="simulator-file-name" class="gcode-import-file-name">No file loaded</p>
+              <button type="button" id="simulator-clear">Clear</button>
+            </div>
+            <label for="simulator-text" class="simulator-machine-detail">G-code</label>
+            <textarea id="simulator-text" class="simulator-machine-detail" rows="10" spellcheck="false" placeholder="Paste G-code here…"></textarea>
+            <div id="simulator-stats" class="simulator-stats simulator-machine-detail"></div>
+            <div id="simulator-exposure" class="simulator-exposure"></div>
+          </div>
+
           <label>Lower Z Offset (mm above bottom)</label>
           <input id="lower-z" type="number" step="0.01" />
 
@@ -179,6 +239,8 @@
             <button type="button" id="save-bulk-combined" class="bulk-only primary">Save combined file</button>
             <button type="button" id="save-bulk-individual" class="bulk-only">Save one file per well</button>
             <button type="button" id="save-circle" class="circle-only primary">Save G-code</button>
+            <button type="button" id="simulate-motion">Simulate current motion</button>
+            <button type="button" id="simulator-refresh" class="simulator-only">Reload current job</button>
           </div>
           <p id="save-status"></p>
         </section>
@@ -224,13 +286,77 @@
             <p id="preview-meta-circle">Well preview</p>
           </div>
 
+          <div id="simulator-preview-wrap" class="simulator-only simulator-preview-wrap">
+            <div class="simulator-preview-head">
+              <div>
+                <p class="simulator-eyebrow" id="simulator-context-label">EXPERIMENT VIEW</p>
+                <h3 id="simulator-action-title">Ready to simulate</h3>
+              </div>
+              <div id="simulator-progress-summary" class="simulator-progress-summary" aria-live="polite">Load G-code to inspect the experiment.</div>
+            </div>
+            <div class="simulator-stage">
+              <div id="simulator-2d-wrap" class="simulator-2d-wrap">
+                <canvas id="simulator-canvas" width="840" height="640"></canvas>
+              </div>
+              <div id="simulator-3d" hidden></div>
+              <canvas id="simulator-z" width="72" height="640"></canvas>
+            </div>
+            <div id="simulator-side-placement" class="simulator-side-placement" hidden aria-live="polite"></div>
+            <div class="simulator-transport">
+              <div class="simulator-view-controls">
+              <label>View <select id="simulator-view"><option value="2d">2D top-down</option><option value="3d">3D</option></select></label>
+              <label>3D angle
+                <select id="simulator-camera-angle">
+                  <option value="depth" selected>Hydrogel depth</option>
+                  <option value="oblique">Oblique overview</option>
+                  <option value="side">True side</option>
+                  <option value="top">Top-down</option>
+                  <option value="section">Cross-section</option>
+                </select>
+              </label>
+              <label>Focus <select id="simulator-fit"><option value="job">Whole well</option><option value="treatment">Active treatment</option><option value="plate">Full plate</option></select></label>
+              <label>Speed <select id="simulator-speed"></select></label>
+              </div>
+              <details class="simulator-layers" open>
+                <summary>Scientific layers</summary>
+                <div class="simulator-layer-grid">
+                  <label class="simulator-check"><input type="checkbox" checked disabled /> Hydrogel volume</label>
+                  <label class="simulator-check"><input type="checkbox" checked disabled /> Well geometry</label>
+                  <label class="simulator-check"><input type="checkbox" checked disabled /> Microcapillary</label>
+                  <label class="simulator-check"><input id="simulator-show-completed" type="checkbox" checked /> Dispensing path</label>
+                  <label class="simulator-check"><input id="simulator-show-density" type="checkbox" /> Treatment density</label>
+                  <label class="simulator-check simulator-machine-control"><input id="simulator-show-travel" type="checkbox" /> XY travel</label>
+                  <label class="simulator-check simulator-machine-control"><input id="simulator-show-z-moves" type="checkbox" /> Z approach/retract</label>
+                </div>
+                <div id="simulator-density-options" class="simulator-density-options" hidden>
+                  <label>Density measure <select id="simulator-density-mode"><option value="count">Injection count</option><option value="volume">Deposited volume (µL)</option><option value="cells">Estimated cells</option><option value="dwell">Dwell-weighted volume</option></select></label>
+                  <div id="simulator-density-legend" class="simulator-density-legend"><span>Low</span><i></i><span>High</span><strong id="simulator-density-total"></strong></div>
+                </div>
+              </details>
+              <div id="simulator-section-controls" class="simulator-section-controls" hidden>
+                <label for="simulator-section-height">Depth slice <strong id="simulator-section-value">2.10 mm</strong></label>
+                <input id="simulator-section-height" type="range" min="0" max="4.24" step="0.05" value="2.1" />
+                <p>Shows dispense points within ±0.15 mm of the selected hydrogel plane.</p>
+              </div>
+              <div id="simulator-well-profile" class="simulator-well-profile" aria-label="Well depth profile"></div>
+              <div class="simulator-playback">
+                <button type="button" id="simulator-play" class="primary">Play</button>
+                <button type="button" id="simulator-pause">Pause</button>
+                <button type="button" id="simulator-reset">Reset</button>
+              </div>
+              <input id="simulator-scrub" type="range" min="0" max="1" step="0.01" value="0" />
+              <div class="simulator-progress-track" role="progressbar" aria-label="Experiment progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="simulator-progress-fill"></span></div>
+              <p id="simulator-status" class="simulator-status">Load G-code to simulate motion.</p>
+            </div>
+          </div>
+
           <p id="coord-label">Hover over a dot to see coordinates</p>
 
           <button id="ecalc-toggle" class="full">E-value calculator ▼</button>
           <div id="ecalc-panel">
             <h3>Enter variables</h3>
             <label># Cells per injection</label>
-            <input id="ecalc-cells" type="number" step="1" value="250" />
+            <input id="ecalc-cells" type="number" step="1" value="50" />
 
             <label>Volume per injection (µl)</label>
             <input id="ecalc-vol-ul" type="number" step="0.0001" value="0.01" />
@@ -238,10 +364,8 @@
             <label>Needle ratio (mm/µl)</label>
             <input id="ecalc-needle-ratio" type="number" step="0.0001" value="1.05" />
 
-            <label>Tip diameter (mm)</label>
-            <input id="ecalc-tip-mm" type="number" step="0.0001" value="0.1" />
-
             <p class="note">* Steps/µl uses 10498.7 steps/mm × needle ratio</p>
+            <p class="note">Default 50 cells at 0.01 µL = 5,000 cells/µL (5,000,000 cells/mL).</p>
 
             <h3>Results</h3>
             <div class="results-grid">
@@ -249,7 +373,6 @@
               <span>E-value:</span><strong id="ecalc-e-val">—</strong>
               <span>Steps/µl:</span><strong id="ecalc-steps-ul">—</strong>
               <span>Steps per injection:</span><strong id="ecalc-steps-inj">—</strong>
-              <span>Void height (mm):</span><strong id="ecalc-void-h">—</strong>
             </div>
             <p class="note ecalc-apply-note">
               The calculator does not change Extrusion (E) automatically. Choose which pass field to update.
@@ -275,8 +398,13 @@
       </div>
     </div>
 
+    <script src="./gcode-motion.js"></script>
+    <script src="./pico-simulator.js"></script>
     <script src="./gcode-core.js"></script>
     <script src="./multi-print-extra.js"></script>
+    <script src="./simulator-2d.js"></script>
+    <script src="./simulator-3d.js"></script>
+    <script src="./simulator-app.js"></script>
     <script src="./boot.js"></script>
   </body>
 </html>

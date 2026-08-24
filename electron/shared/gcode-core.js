@@ -1,11 +1,11 @@
 /* eslint-disable no-unused-vars */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
-    module.exports = factory();
+    module.exports = factory(require("./gcode-motion.js"));
   } else {
-    root.GcodeCore = factory();
+    root.GcodeCore = factory(root.GcodeMotion);
   }
-})(typeof globalThis !== "undefined" ? globalThis : this, function gcodeCoreFactory() {
+})(typeof globalThis !== "undefined" ? globalThis : this, function gcodeCoreFactory(GcodeMotion) {
   const WELL_BOTTOM_Z = 2.35;
   const DEFAULT_LOWER_Z_OFFSET = 1.5;
   const DEFAULT_UPPER_Z_OFFSET = 1.51;
@@ -109,6 +109,7 @@
       wellStarts: DEFAULT_24WELL_STARTS,
       wellCenters: DEFAULT_24WELL_CENTERS,
       wellDiamMm: 14.5,
+      wellDepthMm: 15,
     },
     "48well": {
       id: "48well",
@@ -166,6 +167,74 @@
 
   function getWellRadiusMm(plateTypeId = DEFAULT_PLATE_TYPE) {
     return getWellDiamMm(plateTypeId) / 2;
+  }
+
+  function hydrogelFillHeightMm(volumeUl, wellDiamMm) {
+    const volumeMm3 = Number(volumeUl);
+    const diameterMm = Number(wellDiamMm);
+    if (!Number.isFinite(volumeMm3) || volumeMm3 <= 0) return 0;
+    if (!Number.isFinite(diameterMm) || diameterMm <= 0) return 0;
+    const radiusMm = diameterMm / 2;
+    return volumeMm3 / (Math.PI * radiusMm * radiusMm);
+  }
+
+  function listPlateTypes() {
+    return PLATE_TYPE_OPTIONS.map(({ id, label }) => ({ id, label }));
+  }
+
+  function createPlateApi(plateTypeId = DEFAULT_PLATE_TYPE) {
+    const id = normalizePlateTypeId(plateTypeId);
+    const definition = getPlateType(id);
+    const wellCenters = getWellCenters(id);
+    const wellKeys = sortWellKeys(Object.keys(wellCenters), id);
+    const first = wellCenters[wellKeys[0]] || [0, 0];
+    const nextRow = wellCenters[`${definition.rowKeys[1] || definition.rowKeys[0]}${definition.colKeys[0]}`] || first;
+    const nextCol = wellCenters[`${definition.rowKeys[0]}${definition.colKeys[1] || definition.colKeys[0]}`] || first;
+    return {
+      plateTypeId: id,
+      wellCenters,
+      wellKeys,
+      wellDiamMm: definition.wellDiamMm,
+      wellDepthMm: definition.wellDepthMm || 15,
+      wellRadiusMm: definition.wellDiamMm / 2,
+      pitchXmm: Math.abs(nextRow[0] - first[0]),
+      pitchYmm: Math.abs(nextCol[1] - first[1]),
+      getWellCenterMm: (wellKey) => getWellCenterMm(wellKey, id),
+      isDotInsideWellMm: (x, y, wellKey) => isDotInsideWellMm(x, y, wellKey, id),
+    };
+  }
+
+  function estimateGcodeRunTimeSec(gcodeText) {
+    return GcodeMotion?.estimateGcodeRunTimeSec?.(gcodeText) || 0;
+  }
+
+  const Z_ELEVATION_COLOR_ANCHORS = [
+    { z: 0.1, color: "#dc2626" }, { z: 0.2, color: "#f97316" },
+    { z: 0.3, color: "#facc15" }, { z: 0.4, color: "#22c55e" },
+    { z: 0.5, color: "#3b82f6" }, { z: 0.6, color: "#9333ea" },
+  ];
+  const Z_ELEVATION_RAISED_COLOR = "#475569";
+
+  function colorForZElevation(absZ) {
+    if (!Number.isFinite(absZ)) return Z_ELEVATION_COLOR_ANCHORS[0].color;
+    if (absZ > 0.65) return Z_ELEVATION_RAISED_COLOR;
+    let chosen = Z_ELEVATION_COLOR_ANCHORS[0].color;
+    Z_ELEVATION_COLOR_ANCHORS.forEach((anchor) => {
+      if (absZ >= anchor.z) chosen = anchor.color;
+    });
+    return chosen;
+  }
+
+  function colorForZSpan(absZ, minZ, maxZ) {
+    const span = maxZ - minZ;
+    const ratio = span > 0 ? Math.max(0, Math.min(1, (absZ - minZ) / span)) : 0;
+    const index = Math.round(ratio * (Z_ELEVATION_COLOR_ANCHORS.length - 1));
+    return Z_ELEVATION_COLOR_ANCHORS[index].color;
+  }
+
+  function rgb01ForZSpan(absZ, minZ, maxZ) {
+    const hex = colorForZSpan(absZ, minZ, maxZ);
+    return [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);
   }
 
   function sortWellKeys(wellKeys, plateTypeId = DEFAULT_PLATE_TYPE) {
@@ -496,11 +565,20 @@
     WELL_POSITIONS_12,
     WELL_POSITIONS_PEN,
     CENTER_OFFSET_FROM_START,
+    listPlateTypes,
+    createPlateApi,
+    estimateGcodeRunTimeSec,
+    Z_ELEVATION_COLOR_ANCHORS,
+    Z_ELEVATION_RAISED_COLOR,
+    colorForZElevation,
+    colorForZSpan,
+    rgb01ForZSpan,
     getPlateType,
     getWellStarts,
     getWellCenters,
     getWellDiamMm,
     getWellRadiusMm,
+    hydrogelFillHeightMm,
     sortWellKeys,
     normalizePlateTypeId,
     build24WellMap,

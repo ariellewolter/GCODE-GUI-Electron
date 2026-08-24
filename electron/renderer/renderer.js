@@ -122,12 +122,10 @@ const el = {
   ecalcCells: document.getElementById("ecalc-cells"),
   ecalcVolUl: document.getElementById("ecalc-vol-ul"),
   ecalcNeedleRatio: document.getElementById("ecalc-needle-ratio"),
-  ecalcTipMm: document.getElementById("ecalc-tip-mm"),
   ecalcConc: document.getElementById("ecalc-conc"),
   ecalcEVal: document.getElementById("ecalc-e-val"),
   ecalcStepsUl: document.getElementById("ecalc-steps-ul"),
   ecalcStepsInj: document.getElementById("ecalc-steps-inj"),
-  ecalcVoidH: document.getElementById("ecalc-void-h"),
   extraPrintsContainer: document.getElementById("extra-prints-container"),
   addExtraPrint: document.getElementById("add-extra-print"),
   savePrint1: document.getElementById("save-print-1"),
@@ -981,6 +979,12 @@ function isCirclePrintEnabled() {
   return getAppMode() === "circle-print";
 }
 
+function isSimulatorEnabled() {
+  return getAppMode() === "simulator";
+}
+
+let lastSimulatorSourceMode = "standard";
+
 function setCircleCenterToWell(wellKey, plateTypeId = getCurrentPlateTypeId()) {
   const [cx, cy] = getWellCenterMm(wellKey, plateTypeId);
   if (el.circleCenterX) el.circleCenterX.value = cx.toFixed(2);
@@ -1153,6 +1157,15 @@ function buildBulkCombinedGcode(wells) {
 }
 
 function setAppMode(tabId) {
+  if (tabId !== "simulator") {
+    lastSimulatorSourceMode = tabId;
+    const sourceSelect = document.getElementById("simulator-source-mode");
+    if (sourceSelect) sourceSelect.value = tabId;
+  }
+  if (tabId === "simulator") {
+    window.GcodeMotionSimulator?.pause();
+    requestAnimationFrame(() => window.GcodeMotionSimulator?.setPlateType());
+  }
   document.body.dataset.appMode = tabId;
   const currentWell = el.well.value;
   if (tabId === "bulk-print") {
@@ -1176,6 +1189,26 @@ function setAppMode(tabId) {
   }
   updateModeUi();
   drawPreview();
+}
+
+function currentJobGcodeForSimulator(mode = lastSimulatorSourceMode) {
+  if (mode === "multi-print") return buildCombinedGcodeAllPasses();
+  if (mode === "bulk-print") {
+    const wells = getSelectedBulkWells();
+    return wells.length ? buildBulkCombinedGcode(wells) : paramsToGcode(collectPrint1Params());
+  }
+  if (mode === "circle-print") return circleParamsToGcode(collectCircleParams());
+  return paramsToGcode(collectPrint1Params());
+}
+
+function simulateCurrentMotion(mode = getAppMode()) {
+  const sourceMode = mode === "simulator" ? lastSimulatorSourceMode : mode;
+  const gcode = currentJobGcodeForSimulator(sourceMode);
+  const simulatorTab = document.querySelector('.tab[data-tab="simulator"]');
+  simulatorTab?.click();
+  window.GcodeMotionSimulator?.loadGcode(gcode, {
+    sourceLabel: `${sourceMode.replaceAll("-", " ")} settings`,
+  });
 }
 
 function collectExtraPrintParams(printNum) {
@@ -2427,16 +2460,13 @@ function setEcalcOutputEmpty() {
   el.ecalcEVal.textContent = "—";
   el.ecalcStepsUl.textContent = "—";
   el.ecalcStepsInj.textContent = "—";
-  el.ecalcVoidH.textContent = "—";
 }
 
 function updateEcalc() {
   const cells = parseEcalcFloat(el.ecalcCells.value);
   const volUl = parseEcalcFloat(el.ecalcVolUl.value);
   const needleRatio = parseEcalcFloat(el.ecalcNeedleRatio.value);
-  const tipMm = parseEcalcFloat(el.ecalcTipMm.value);
-
-  if (cells === null || volUl === null || needleRatio === null || tipMm === null) {
+  if (cells === null || volUl === null || needleRatio === null) {
     setEcalcOutputEmpty();
     return;
   }
@@ -2454,13 +2484,6 @@ function updateEcalc() {
   el.ecalcStepsUl.textContent = stepsPerUl.toPrecision(6).replace(/\.?0+$/, "");
   el.ecalcStepsInj.textContent = stepsInj.toPrecision(6).replace(/\.?0+$/, "");
 
-  if (tipMm > 0) {
-    const r = tipMm / 2.0;
-    const voidH = volUl / (Math.PI * r * r);
-    el.ecalcVoidH.textContent = voidH.toPrecision(6).replace(/\.?0+$/, "");
-  } else {
-    el.ecalcVoidH.textContent = "—";
-  }
 }
 
 async function saveGcodeFile(contents, defaultFileName) {
@@ -3053,6 +3076,16 @@ function bootApp() {
     initCirclePrint();
     setDefaultsFromCurrentWell();
     initTabs();
+    window.GcodeMotionSimulator?.init({
+      getPlateTypeId: () => getCurrentPlateTypeId(),
+      onRefreshCurrentJob: () => simulateCurrentMotion(lastSimulatorSourceMode),
+    });
+    document.getElementById("simulate-motion")?.addEventListener("click", () => simulateCurrentMotion());
+    document.getElementById("simulator-load-source")?.addEventListener("click", () => {
+      const sourceMode = document.getElementById("simulator-source-mode")?.value || lastSimulatorSourceMode;
+      lastSimulatorSourceMode = sourceMode;
+      simulateCurrentMotion(sourceMode);
+    });
     if (el.plateType) {
       el.plateType.addEventListener("change", onPlateTypeChange);
     }
@@ -3152,7 +3185,7 @@ el.ecalcToggle.addEventListener("click", () => {
 [el.lowerZ, el.upperZ, el.extrusionE].forEach((i) => {
   i.addEventListener("input", onPrint1PassInput);
 });
-[el.ecalcCells, el.ecalcVolUl, el.ecalcNeedleRatio, el.ecalcTipMm].forEach((i) => {
+[el.ecalcCells, el.ecalcVolUl, el.ecalcNeedleRatio].forEach((i) => {
   i.addEventListener("input", updateEcalc);
 });
 if (el.ecalcApplyP1) {

@@ -413,6 +413,20 @@ describe("safeInt and safeFloat", () => {
   });
 });
 
+describe("hydrogelFillHeightMm", () => {
+  it("converts microliters to cylindrical fill height", () => {
+    const height = core.hydrogelFillHeightMm(700, 14.5);
+    assert.ok(Math.abs(height - 4.2385) < 0.001);
+    const plate = core.createPlateApi("24well");
+    assert.equal(plate.wellDepthMm, 15);
+  });
+
+  it("returns zero for invalid volume or diameter", () => {
+    assert.equal(core.hydrogelFillHeightMm(0, 14.5), 0);
+    assert.equal(core.hydrogelFillHeightMm(700, 0), 0);
+  });
+});
+
 describe("parsePatternFloat", () => {
   it("returns 0 for empty pattern fields", () => {
     assert.equal(parsePatternFloat(""), 0);
