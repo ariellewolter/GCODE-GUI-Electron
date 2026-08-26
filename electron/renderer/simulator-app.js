@@ -81,6 +81,7 @@
       densityMode: $("simulator-density-mode"),
       densityOptions: $("simulator-density-options"),
       densityTotal: $("simulator-density-total"),
+      passLegend: $("simulator-pass-legend"),
     };
 
     let options = {};
@@ -199,8 +200,9 @@
       return { x: Array.isArray(center) ? center[0] : center.x, y: Array.isArray(center) ? center[1] : center.y };
     }
 
-    function actionLabel(kind) {
-      return kind === "dispense" ? "Dispensing into hydrogel"
+    function actionLabel(kind, sample) {
+      if (sample?.passTransition) return `Preparing Print ${sample.passNum} · 5 second transition`;
+      return kind === "dispense" ? `Print ${sample?.passNum || 1} · dispensing into hydrogel`
         : kind === "travel" ? "Moving to the next position"
           : kind === "zMove" ? "Approaching or retracting microcapillary"
             : kind === "dwell" ? "Dispense dwell"
@@ -209,6 +211,10 @@
 
     function dispenseEvents() {
       return motion.events.filter((event) => event.eDelta > 0);
+    }
+
+    function passColor(passNum) {
+      return ["#f97316", "#9333ea", "#0891b2", "#be185d", "#65a30d", "#0d9488"][(Math.max(1, passNum) - 1) % 6];
     }
 
     function followingDwellSec(eventIndex) {
@@ -271,7 +277,7 @@
           const zStart = Number(event.from?.z);
           const zEnd = Number(event.to?.z);
           const z = Number.isFinite(zStart) && Number.isFinite(zEnd) ? (zStart + zEnd) / 2 : event.to?.z;
-          return { x: event.to?.x, y: event.to?.y, z, zStart, zEnd, eDelta: event.eDelta, densityValue: density.value, densityUnit: density.unit };
+          return { x: event.to?.x, y: event.to?.y, z, zStart, zEnd, eDelta: event.eDelta, passNum: event.passNum || 1, densityValue: density.value, densityUnit: density.unit };
         });
       updateDensityTotal(points);
       return points;
@@ -319,11 +325,17 @@
       const activeWell = well === "Between wells" ? "—" : well;
       const depth = treatmentDepthMm();
       const totalPath = (Number(summary?.treatmentPathLengthMm) || 0) + (Number(summary?.travelPathLengthMm) || 0);
+      if (els.passLegend) {
+        const passes = [...new Set(dispenses.map((event) => event.passNum || 1))].sort((a, b) => a - b);
+        els.passLegend.innerHTML = passes.length > 1
+          ? passes.map((passNum) => `<span><i style="background:${passColor(passNum)}"></i>Print ${passNum}</span>`).join("")
+          : "";
+      }
       if (els.experimentSetup) {
         const plateCells = (plate?.wellKeys || []).map((key) => `<b class="${treatedWells.has(key) ? "treated" : ""}" aria-label="Well ${key}${treatedWells.has(key) ? ", treated" : ""}">${key}</b>`).join("");
         els.experimentSetup.innerHTML = `<div><span>Plate / current well</span><strong>${plateLabel} · ${activeWell}</strong></div><div><span>Material volume</span><strong>${formatCount(volume)} µL · ${height.toFixed(2)} mm high</strong></div><div><span>Motion</span><strong>${formatCount(dispenses.length)} dispense points</strong></div><div><span>Treatment depth</span><strong>${formatCoord(depth)} mm</strong></div><div><span>Runtime</span><strong>${formatTime(summary?.durationSec)}</strong></div><div><span>Total path</span><strong>${formatCoord(totalPath)} mm</strong></div><div class="simulator-plate-overview"><span>Treated-well overview</span><div>${plateCells}</div></div>`;
       }
-      if (els.actionTitle) els.actionTitle.textContent = actionLabel(sample.displayKind);
+      if (els.actionTitle) els.actionTitle.textContent = actionLabel(sample.displayKind, sample);
       if (els.progressSummary) els.progressSummary.textContent = `${well} · ${completed} of ${dispenses.length} dispense actions · ${formatTime(sample.t)} of ${formatTime(sample.durationSec)}`;
       const progress = sample.durationSec ? Math.max(0, Math.min(100, sample.t / sample.durationSec * 100)) : 0;
       if (els.progressFill) els.progressFill.style.width = `${progress}%`;
@@ -545,8 +557,8 @@
               : "idle";
       if (els.status) {
         els.status.textContent = perspective === "machine"
-          ? `${time}  ·  ${xyz}  ·  ${feed}  ·  ${role}  ·  ${speed}×`
-          : `${actionLabel(sample.displayKind)} · ${nearestWell(sample.x, sample.y)} · ${speed}× playback`;
+          ? `${time}  ·  Print ${sample.passNum || 1}  ·  ${xyz}  ·  ${feed}  ·  ${role}  ·  ${speed}×`
+          : `${actionLabel(sample.displayKind, sample)} · ${nearestWell(sample.x, sample.y)} · ${speed}× playback`;
       }
       if (els.scrub && document.activeElement !== els.scrub) {
         els.scrub.value = String(t);

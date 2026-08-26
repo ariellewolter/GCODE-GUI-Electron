@@ -83,6 +83,25 @@ describe("micropipette simulator overlay", () => {
     assert.deepEqual(kinds, ["travel", "dispense", "travel", "zMove", "dwell"]);
   });
 
+  it("adds a five-second visual transition and pass metadata for multi-print G-code", () => {
+    const gcode = [
+      "G1 X0 Y0 Z1 F60",
+      "G1 Z1.01 E0.01 F3",
+      "; === Print 2 (pass 2, same well A1) ===",
+      "G1 Z1.02 E0.01 F3",
+    ].join("\n");
+    const motion = parseGcodeMotion(gcode);
+    const transition = motion.events.find((event) => event.passTransition);
+    const injections = motion.events.filter((event) => event.eDelta > 0);
+    assert.ok(transition);
+    assert.equal(transition.t1 - transition.t0, 5);
+    assert.equal(transition.passNum, 2);
+    assert.deepEqual(injections.map((event) => event.passNum), [1, 2]);
+    const duringTransition = sampleTimeline(motion, transition.t0 + 1);
+    assert.equal(duringTransition.passTransition, true);
+    assert.equal(duringTransition.passNum, 2);
+  });
+
   it("summarizes dispensing motion", () => {
     const gcode = [
       "G1 F30",

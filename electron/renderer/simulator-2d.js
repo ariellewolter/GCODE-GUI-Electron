@@ -115,6 +115,11 @@
   }
 
   const Z_PATH_ANCHORS = ["#dc2626", "#f97316", "#facc15", "#22c55e", "#3b82f6", "#9333ea"];
+  const PASS_COLORS = ["#f97316", "#9333ea", "#0891b2", "#be185d", "#65a30d", "#0d9488"];
+
+  function passColor(passNum) {
+    return PASS_COLORS[(Math.max(1, Number(passNum) || 1) - 1) % PASS_COLORS.length];
+  }
 
   function lerpHex(colorA, colorB, t) {
     const blend = Math.max(0, Math.min(1, t));
@@ -418,10 +423,10 @@
           ctx.fill();
         });
       }
-      ctx.fillStyle = "#f97316";
       (state.dispensePoints || []).forEach((point) => {
         if (point.x == null || point.y == null) return;
         const p = map(point.x, point.y);
+        ctx.fillStyle = passColor(point.passNum);
         ctx.beginPath();
         ctx.arc(p.px, p.py, 3.2, 0, Math.PI * 2);
         ctx.fill();

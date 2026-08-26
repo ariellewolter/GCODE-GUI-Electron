@@ -1212,7 +1212,11 @@ function simulateCurrentMotion(mode = getAppMode()) {
 }
 
 function collectExtraPrintParams(printNum) {
-  if (!isSecondPassEnabled() || !ExtraPrintUI) return null;
+  // Pass configuration belongs to the Multi Print job, not to whichever tab is
+  // currently visible. The simulator changes appMode to "simulator" before it
+  // asks for the selected source job, so gating this on isSecondPassEnabled()
+  // silently discarded every pass after Print 1.
+  if (!ExtraPrintUI) return null;
 
   const offsetOn = extraPrintIsOffsetEnabled(printNum);
   const mode = extraPrintGetMode(printNum);

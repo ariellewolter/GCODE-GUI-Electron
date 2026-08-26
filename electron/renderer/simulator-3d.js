@@ -4,6 +4,7 @@
   const WELL_LOOK_AT_Z = 3.5;
   const CAMERA_FOV_DEG = 42;
   const WELL_RIM_ARC_RAD = (120 * Math.PI) / 180;
+  const PASS_COLORS = [0xf97316, 0x9333ea, 0x0891b2, 0xbe185d, 0x65a30d, 0x0d9488];
 
   function createOrbit(center, radius) {
     return {
@@ -209,7 +210,7 @@
 
     const dispenseDots = new THREE.Points(
       new THREE.BufferGeometry(),
-      new THREE.PointsMaterial({ color: 0xf97316, size: 0.32, sizeAttenuation: true })
+      new THREE.PointsMaterial({ color: 0xffffff, vertexColors: true, size: 0.32, sizeAttenuation: true })
     );
     dispenseDots.renderOrder = 10;
     scene.add(dispenseDots);
@@ -472,6 +473,23 @@
         hydrogel.position.set(x, y, safeHeight / 2);
         hydrogel.renderOrder = 5;
         hydrogelGroup.add(hydrogel);
+
+        // Give the liquid-air boundary its own slightly darker surface so the
+        // calculated fill height remains easy to read through the translucent
+        // hydrogel body.
+        const hydrogelTop = new THREE.Mesh(
+          new THREE.CircleGeometry(radius, 48),
+          new THREE.MeshBasicMaterial({
+            color: 0xdb5f9c,
+            transparent: true,
+            opacity: 0.31,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          })
+        );
+        hydrogelTop.position.set(x, y, safeHeight + 0.006);
+        hydrogelTop.renderOrder = 6;
+        hydrogelGroup.add(hydrogelTop);
       });
     }
 
@@ -581,9 +599,16 @@
           return state.sectionHeightMm >= lo && state.sectionHeightMm <= hi;
         });
       dispenseDots.geometry.dispose();
-      dispenseDots.geometry = new THREE.BufferGeometry().setFromPoints(
+      const dispenseGeometry = new THREE.BufferGeometry().setFromPoints(
         visibleDispenses.map((point) => new THREE.Vector3(point.x, point.y, point.z || 0))
       );
+      const passColors = [];
+      visibleDispenses.forEach((point) => {
+        const color = new THREE.Color(PASS_COLORS[(Math.max(1, Number(point.passNum) || 1) - 1) % PASS_COLORS.length]);
+        passColors.push(color.r, color.g, color.b);
+      });
+      if (passColors.length) dispenseGeometry.setAttribute("color", new THREE.Float32BufferAttribute(passColors, 3));
+      dispenseDots.geometry = dispenseGeometry;
       dispenseDots.material.size = state.sideProjection ? 0.48 : 0.32;
       densityDots.geometry.dispose();
       const densityGeometry = new THREE.BufferGeometry().setFromPoints(
@@ -609,6 +634,9 @@
 
       const sample = state.sample;
       if (sample && sample.x != null && sample.y != null) {
+        const activePassColor = PASS_COLORS[(Math.max(1, Number(sample.passNum) || 1) - 1) % PASS_COLORS.length];
+        dispenseMarker.material.color.set(activePassColor);
+        sideTipMarker.material.color.set(activePassColor);
         // Side projection is a coordinate inspection view. A full capillary
         // shaft looks like a false vertical path here, so show only its exact
         // X/Z tip marker.

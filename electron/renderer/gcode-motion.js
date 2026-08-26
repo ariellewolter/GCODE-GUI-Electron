@@ -8,6 +8,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function gcodeMotionFactory() {
   const WORD_RE = /([A-Za-z])\s*([-+]?\d*\.?\d+)/g;
   const E_EPS = 1e-9;
+  const MULTI_PASS_TRANSITION_SEC = 5;
 
   function stripInlineComment(line) {
     const idx = line.indexOf(";");
@@ -50,6 +51,7 @@
     let maxZ = -Infinity;
     const counts = { linearMove: 0, dwell: 0 };
     const feedRates = new Set();
+    let currentPass = 1;
 
     function touchBounds(px, py, pz) {
       if (px != null && Number.isFinite(px)) {
@@ -75,6 +77,32 @@
     }
 
     String(gcodeText || "").split(/\r?\n/).forEach((rawLine, lineIndex) => {
+      const passHeader = rawLine.match(/^\s*;\s*===\s*Print\s+(\d+)\b/i);
+      if (passHeader) {
+        const nextPass = Math.max(1, Number(passHeader[1]) || 1);
+        if (nextPass !== currentPass && events.length) {
+          pushEvent({
+            t0: t,
+            t1: t + MULTI_PASS_TRANSITION_SEC,
+            from: { x, y, z },
+            to: { x, y, z },
+            kind: "dwell",
+            rapid: false,
+            feedMmPerMin: f,
+            xyChanged: false,
+            zChanged: false,
+            xyDistanceMm: 0,
+            zDistanceMm: 0,
+            distanceMm: 0,
+            eDelta: 0,
+            lineIndex,
+            passNum: nextPass,
+            passTransition: true,
+          });
+        }
+        currentPass = nextPass;
+        return;
+      }
       const trimmed = stripInlineComment(rawLine).trim();
       if (!trimmed) return;
 
@@ -102,6 +130,7 @@
           distanceMm: 0,
           eDelta: 0,
           lineIndex,
+          passNum: currentPass,
         });
         return;
       }
@@ -153,6 +182,7 @@
         distanceMm,
         eDelta,
         lineIndex,
+        passNum: currentPass,
       });
 
       x = nextX;
@@ -226,6 +256,8 @@
       kind,
       displayKind,
       eventIndex,
+      passNum: events[eventIndex]?.passNum || 1,
+      passTransition: Boolean(events[eventIndex]?.passTransition),
     };
   }
 
@@ -284,6 +316,7 @@
 
   return {
     parseGcodeMotion,
+    MULTI_PASS_TRANSITION_SEC,
     sampleTimeline,
     trailPoints,
     estimateGcodeRunTimeSec,

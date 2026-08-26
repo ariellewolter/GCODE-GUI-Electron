@@ -349,6 +349,18 @@ body[data-simulator-perspective="experiment"] .simulator-machine-control {
 .simulator-density-options select { margin-left: 5px; }
 .simulator-density-legend strong { margin-left: 5px; color: #334155; font-weight: 600; }
 
+.simulator-pass-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 9px;
+  color: #475569;
+  font-size: 12px;
+}
+.simulator-pass-legend:empty { display: none; }
+.simulator-pass-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.simulator-pass-legend i { width: 9px; height: 9px; border-radius: 50%; }
+
 .simulator-density-calibration {
   display: grid;
   grid-template-columns: 1fr 1fr;

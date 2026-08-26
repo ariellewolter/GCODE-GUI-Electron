@@ -393,6 +393,7 @@
           wellKey: wellKey || "—",
           x, y, z: zMid, zStart, zEnd, zMin, zMax,
           eDelta: event.eDelta || 0,
+          passNum: event.passNum || 1,
           feedMmPerMin: event.feedMmPerMin || null,
           distanceFromCenterMm,
           insideWell,
