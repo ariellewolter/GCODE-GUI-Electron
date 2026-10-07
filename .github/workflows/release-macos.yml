@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Patch macOS keychain signing
+        run: node scripts/patch-electron-builder-keychain.js
+
       - name: Build and sign Electron app
         env:
           CSC_LINK: ${{ secrets.MACOS_CERT_P12 }}
