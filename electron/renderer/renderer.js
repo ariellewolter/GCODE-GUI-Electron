@@ -1470,6 +1470,7 @@ function gcodeCmd(command, comment, annotate) {
 
 function appendPause(lines, milliseconds, comment, annotate, motion) {
   if (motion.removePauseDwells) return;
+  if (!(Number(milliseconds) > 0)) return;
   lines.push(gcodeCmd(
     `G4 P${formatMachineNumber(milliseconds)}`,
     comment,
@@ -1523,11 +1524,13 @@ function appendDotSequence(lines, dotCoords, params, annotate) {
       `Move up to upper position (${formatZMm(upperZ)}mm), extrude ${formatExtrusionE(extrusionE)}, slow at ${extrudeFeed} mm/min`,
       annotate
     ));
-    lines.push(gcodeCmd(
-      `G4 S${formatMachineNumber(motion.dwellDispenseSec)}`,
-      `Wait ${formatMachineNumber(motion.dwellDispenseSec)} seconds for dispensing`,
-      annotate
-    ));
+    if (Number(motion.dwellDispenseSec) > 0) {
+      lines.push(gcodeCmd(
+        `G4 S${formatMachineNumber(motion.dwellDispenseSec)}`,
+        `Wait ${formatMachineNumber(motion.dwellDispenseSec)} seconds for dispensing`,
+        annotate
+      ));
+    }
     lines.push(gcodeCmd(
       `G1 Z${formatZMm(motion.zRetract)} F${retractFeed}`,
       `Retract to ${formatZMm(motion.zRetract)}mm at ${retractFeed} mm/min`,
@@ -1570,7 +1573,7 @@ function buildGcode(params) {
   lines.push(`; Well number ${wellNumber}`);
   lines.push("");
   lines.push("M83");
-  if (!motion.removePauseDwells) {
+  if (!motion.removePauseDwells && Number(motion.pauseStartMs) > 0) {
     lines.push("");
     lines.push(gcodeCmd(
       `G4 P${formatMachineNumber(motion.pauseStartMs)}`,

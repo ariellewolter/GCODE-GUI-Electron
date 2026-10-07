@@ -107,6 +107,7 @@
   }
 
   function clamp(value, fallback, min = null) {
+    if (value == null || value === "") return fallback;
     const n = Number(value);
     if (!Number.isFinite(n)) return fallback;
     if (min != null && n < min) return min;
@@ -327,6 +328,7 @@
   }
 
   function setDetailEditMode(editing, isFactory) {
+    if (!editing) settingsBeforeEdit = null;
     isDetailEditing = Boolean(editing);
     if (ui.detailActionsReadonly) ui.detailActionsReadonly.hidden = isDetailEditing;
     if (ui.detailActionsEditing) ui.detailActionsEditing.hidden = !isDetailEditing;
@@ -480,8 +482,31 @@
     const newName = (ui.editNameInput?.value || profiles[index].name).trim() || profiles[index].name;
     profiles[index] = { ...profiles[index], name: newName, settings: updated };
     persistSettingsProfiles(profiles);
-    if (getActiveProfileId() === profiles[index].id) applyLiveSettings(updated);
+    settingsBeforeEdit = null;
+    setActiveProfileId(profiles[index].id);
+    applyLiveSettings(updated);
     showProfileDetail(profiles[index].id, false);
+  }
+
+  function detailIsOpen() {
+    return Boolean(ui.viewDetail && !ui.viewDetail.hidden);
+  }
+
+  let settingsBeforeEdit = null;
+
+  function commitFormToLive() {
+    if (!isDetailEditing || !detailIsOpen()) return;
+    if (!currentDetailProfileId || currentDetailProfileId === FACTORY_PROFILE_ID) return;
+    if (!settingsBeforeEdit) settingsBeforeEdit = { ...appSettings };
+    appSettings = readForm(settingsBeforeEdit);
+    persistAppSettings();
+  }
+
+  function revertUnsavedEdits() {
+    if (!settingsBeforeEdit) return;
+    appSettings = settingsBeforeEdit;
+    persistAppSettings();
+    settingsBeforeEdit = null;
   }
 
   function duplicateProfileAndEdit(profileId) {
@@ -586,9 +611,17 @@
     });
     ui.detailSaveBtn?.addEventListener("click", saveDetailProfileChanges);
     ui.detailCancelBtn?.addEventListener("click", () => {
+      revertUnsavedEdits();
       if (currentDetailProfileId) showProfileDetail(currentDetailProfileId, false);
     });
-    ui.removePauseDwells?.addEventListener("change", syncPauseInputLock);
+    ui.removePauseDwells?.addEventListener("change", () => {
+      syncPauseInputLock();
+      commitFormToLive();
+    });
+    ui.detailFieldsWrapper?.querySelectorAll("input, select").forEach((input) => {
+      input.addEventListener("input", commitFormToLive);
+      input.addEventListener("change", commitFormToLive);
+    });
     ui.mainAnnotate?.addEventListener("change", () => {
       appSettings.annotate = Boolean(ui.mainAnnotate.checked);
       persistAppSettings();
@@ -630,6 +663,7 @@
   root.AppSettings = {
     init,
     motion() {
+      if (detailIsOpen()) return readForm(appSettings);
       return { ...appSettings };
     },
     passDefaults() {
