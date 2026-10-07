@@ -22,6 +22,17 @@ body {
   flex-direction: column;
 }
 
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.topbar-copy {
+  min-width: 0;
+}
+
 .topbar h1 {
   margin: 0;
   font-size: 28px;
@@ -30,6 +41,367 @@ body {
 .topbar p {
   margin: 6px 0 0;
   color: #6b7280;
+}
+
+.settings-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-top: 4px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.settings-open-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.settings-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.settings-drawer[hidden] {
+  display: none;
+}
+
+.settings-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.settings-drawer-panel {
+  position: relative;
+  width: min(480px, 100%);
+  height: 100%;
+  overflow: auto;
+  background: #ffffff;
+  border-left: 1px solid #dbe2ea;
+  padding: 20px 22px 28px;
+  box-shadow: -16px 0 40px rgba(15, 23, 42, 0.12);
+}
+
+.settings-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.settings-drawer-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.settings-close,
+.settings-back-btn {
+  padding: 8px 12px;
+}
+
+.settings-subtitle {
+  font-size: 13px;
+  color: #64748b;
+  margin: 4px 0 0;
+  font-weight: 400;
+}
+
+.settings-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.settings-section h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.settings-profiles-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  margin-bottom: 12px;
+}
+
+.settings-profiles-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.settings-new-profile-inline {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.settings-new-profile-inline label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #166534;
+  margin-bottom: 6px;
+}
+
+.settings-profile-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-profile-name-row input {
+  flex: 1 1 160px;
+}
+
+.settings-profiles-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.profile-card {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.profile-card:hover {
+  border-color: #94a3b8;
+}
+
+.profile-card.is-active-card {
+  border: 2px solid #2563eb;
+  background: #eff6ff;
+}
+
+.profile-card-left {
+  flex: 1;
+  min-width: 180px;
+}
+
+.profile-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.profile-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.profile-card.is-active-card .profile-card-title {
+  color: #1d4ed8;
+}
+
+.settings-badge-active,
+.settings-badge-factory {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.settings-badge-active {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.settings-badge-factory {
+  background: #e2e8f0;
+  color: #475569;
+  font-weight: 600;
+}
+
+.profile-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.profile-chip {
+  font-size: 11.5px;
+  color: #475569;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.profile-card.is-active-card .profile-chip {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #bfdbfe;
+}
+
+.profile-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.profile-card-actions button {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.btn-card-use:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.btn-card-active-label {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+  cursor: default;
+}
+
+.btn-danger-outline {
+  background: #ffffff;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.btn-danger-outline:hover {
+  background: #fef2f2;
+}
+
+.settings-back-btn {
+  background: #f8fafc;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.settings-detail-header-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-top: 14px;
+}
+
+.settings-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.settings-detail-profile-name {
+  margin: 0;
+  font-size: 18px;
+}
+
+.settings-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-edit-name-section {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 14px;
+}
+
+.settings-detail-fields-wrapper.is-readonly input,
+.settings-detail-fields-wrapper.is-readonly select {
+  background: #f8fafc;
+  color: #334155;
+  cursor: not-allowed;
+}
+
+.settings-detail-fields-wrapper.is-editing input,
+.settings-detail-fields-wrapper.is-editing select {
+  background: #ffffff;
+  border-color: #3b82f6;
+}
+
+.settings-drawer-panel label:not(.checkbox) {
+  display: block;
+  margin: 12px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.settings-drawer-panel input,
+.settings-drawer-panel select {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.settings-drawer-panel .checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.settings-drawer-panel input[type="checkbox"] {
+  width: auto;
+  margin: 2px 0 0;
+  flex-shrink: 0;
+}
+
+.settings-drawer-panel .note {
+  margin: 8px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.settings-drawer-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
 }
 
 .tabs {

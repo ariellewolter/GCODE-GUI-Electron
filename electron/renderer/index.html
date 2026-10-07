@@ -11,8 +11,23 @@
   <body data-app-mode="standard">
     <div class="app">
       <header class="topbar">
-        <h1>G-Code Generator</h1>
-        <p id="app-subtitle">Scientific G-code generation and experiment simulation</p>
+        <div class="topbar-copy">
+          <h1>G-Code Generator</h1>
+          <p id="app-subtitle">Scientific G-code generation and experiment simulation</p>
+        </div>
+        <button
+          type="button"
+          id="settings-open"
+          class="settings-open"
+          aria-haspopup="dialog"
+          aria-controls="settings-drawer"
+          aria-expanded="false"
+        >
+          <svg class="settings-open-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.07 7.07 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.55-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.83 14.16a.5.5 0 0 0-.12.64l1.92 3.32c.13.23.4.32.64.22l2.39-.96c.5.39 1.04.7 1.63.94l.36 2.54c.05.24.25.42.49.42h3.8c.24 0 .44-.18.49-.42l.36-2.54c.59-.24 1.13-.55 1.63-.94l2.39.96c.24.1.51.01.64-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z" />
+          </svg>
+          Settings
+        </button>
       </header>
 
       <nav class="tabs" role="tablist" aria-label="Application modes">
@@ -388,6 +403,165 @@
       </main>
     </div>
 
+    <div id="settings-drawer" class="settings-drawer" hidden role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="settings-drawer-backdrop" id="settings-drawer-backdrop"></div>
+      <div class="settings-drawer-panel">
+        <div id="settings-view-list" class="settings-view">
+          <div class="settings-drawer-head">
+            <div>
+              <h2 id="settings-title">Settings Profiles</h2>
+              <p class="settings-subtitle">Select a profile to use, or open one to inspect and edit its motion parameters.</p>
+            </div>
+            <button type="button" id="settings-close" class="settings-close" aria-label="Close settings">Close</button>
+          </div>
+
+          <div class="settings-profiles-top-bar">
+            <span class="settings-profiles-count" id="settings-profiles-count"></span>
+            <button type="button" id="settings-create-profile-btn" class="primary">+ New Profile</button>
+          </div>
+
+          <div id="settings-new-profile-inline" class="settings-new-profile-inline" hidden>
+            <label for="settings-new-profile-name-input">New profile name</label>
+            <div class="settings-profile-name-row">
+              <input type="text" id="settings-new-profile-name-input" placeholder="e.g. Viscous Collagen, Fast Hydrogel" />
+              <button type="button" id="settings-confirm-create-profile-btn" class="primary">Create &amp; Edit</button>
+              <button type="button" id="settings-cancel-create-profile-btn">Cancel</button>
+            </div>
+          </div>
+
+          <div id="settings-profiles-cards-container" class="settings-profiles-cards-container"></div>
+
+          <div class="settings-drawer-actions">
+            <button type="button" id="settings-reset">Reset All to Factory Defaults</button>
+            <button type="button" id="settings-done" class="primary">Done</button>
+          </div>
+        </div>
+
+        <div id="settings-view-detail" class="settings-view" hidden>
+          <div class="settings-drawer-head">
+            <button type="button" id="settings-back-btn" class="settings-back-btn">← Back to Profiles</button>
+            <button type="button" id="settings-detail-close" class="settings-close" aria-label="Close settings">Close</button>
+          </div>
+
+          <div class="settings-detail-header-card">
+            <div class="settings-detail-header-info">
+              <div class="settings-detail-title-row">
+                <h2 id="settings-detail-profile-name" class="settings-detail-profile-name">Profile Name</h2>
+                <span id="settings-detail-active-badge" class="settings-badge-active">● Active In Use</span>
+              </div>
+              <p id="settings-detail-mode-notice" class="note">Viewing in read-only mode. Click Edit Profile to modify settings.</p>
+            </div>
+            <div id="settings-detail-actions-readonly" class="settings-detail-actions">
+              <button type="button" id="settings-detail-activate-btn">Use this Profile</button>
+              <button type="button" id="settings-detail-edit-btn" class="primary">Edit Profile</button>
+            </div>
+            <div id="settings-detail-actions-editing" class="settings-detail-actions" hidden>
+              <button type="button" id="settings-detail-save-btn" class="primary">Save Changes</button>
+              <button type="button" id="settings-detail-cancel-btn">Cancel</button>
+            </div>
+          </div>
+
+          <div id="settings-detail-edit-name-section" class="settings-edit-name-section" hidden>
+            <label for="settings-edit-name-input">Profile Name</label>
+            <input type="text" id="settings-edit-name-input" />
+          </div>
+
+          <div id="settings-detail-fields-wrapper" class="settings-detail-fields-wrapper is-readonly">
+            <section class="settings-section">
+              <h3>Pauses / dwells</h3>
+              <label class="checkbox">
+                <input id="settings-remove-pause-dwells" type="checkbox" />
+                <span>Remove all pause dwells (omits G4 P stabilization and travel pauses)</span>
+              </label>
+              <div class="settings-grid">
+                <label for="settings-pause-start">Start (ms)</label>
+                <input id="settings-pause-start" type="number" step="1" min="0" />
+                <label for="settings-pause-xy">After XY move (ms)</label>
+                <input id="settings-pause-xy" type="number" step="1" min="0" />
+                <label for="settings-pause-approach">After approach (ms)</label>
+                <input id="settings-pause-approach" type="number" step="1" min="0" />
+                <label for="settings-pause-lower">At lower Z (ms)</label>
+                <input id="settings-pause-lower" type="number" step="1" min="0" />
+                <label for="settings-dwell-dispense">Dispense wait (s)</label>
+                <input id="settings-dwell-dispense" type="number" step="0.1" min="0" />
+                <label for="settings-pause-retract">After retract (ms)</label>
+                <input id="settings-pause-retract" type="number" step="1" min="0" />
+                <label for="settings-pause-safe">After safe lift (ms)</label>
+                <input id="settings-pause-safe" type="number" step="1" min="0" />
+                <label for="settings-pause-park">After park (ms)</label>
+                <input id="settings-pause-park" type="number" step="1" min="0" />
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <h3>G-code output and annotations</h3>
+              <label class="checkbox">
+                <input id="settings-annotate" type="checkbox" />
+                <span>Include code annotations (explains what each line does)</span>
+              </label>
+            </section>
+
+            <section class="settings-section">
+              <h3>Needle clearance</h3>
+              <label for="settings-needle-width">Minimum interference needle width, XY (mm)</label>
+              <input id="settings-needle-width" type="number" step="0.01" min="0" value="0.3" />
+              <p class="note">Blocks save when grid X/Y spacing is tighter than this.</p>
+              <label class="checkbox">
+                <input id="settings-allow-same-insertion" type="checkbox" />
+                <span>Allow same insertion point for extrusion</span>
+              </label>
+              <p class="note">Off: later dots skip extrusion at an XY that was already used. On: later passes may insert at previous coordinates.</p>
+            </section>
+
+            <section class="settings-section">
+              <h3>Defaults for new jobs</h3>
+              <label for="settings-default-lower-z">Default lower Z offset (mm)</label>
+              <input id="settings-default-lower-z" type="number" step="0.01" min="0" />
+              <label for="settings-default-upper-z">Default upper Z offset (mm)</label>
+              <input id="settings-default-upper-z" type="number" step="0.01" min="0" />
+              <label for="settings-default-extrusion">Default extrusion per dot (E)</label>
+              <input id="settings-default-extrusion" type="number" step="0.0001" min="0" />
+              <p class="note">Applied when you reset fields or load a well’s default pattern. The values already on screen stay until then.</p>
+            </section>
+
+            <section class="settings-section">
+              <h3>Travel heights (mm)</h3>
+              <label for="settings-z-approach">Approach Z</label>
+              <input id="settings-z-approach" type="number" step="0.01" min="0" />
+              <label for="settings-z-retract">Retract Z</label>
+              <input id="settings-z-retract" type="number" step="0.01" min="0" />
+              <label for="settings-z-safe">Per-dot safe Z</label>
+              <input id="settings-z-safe" type="number" step="0.01" min="0" />
+              <label for="settings-z-park">Final park Z</label>
+              <input id="settings-z-park" type="number" step="0.01" min="0" />
+              <label for="settings-plate-bottom-z">Plate bottom Z (BottomElevation)</label>
+              <input id="settings-plate-bottom-z" type="number" step="0.01" min="0" />
+            </section>
+
+            <section class="settings-section">
+              <h3>Feed rates (mm/min)</h3>
+              <div class="settings-grid">
+                <label for="settings-feed-xy">XY travel</label>
+                <input id="settings-feed-xy" type="number" step="1" min="0.01" />
+                <label for="settings-feed-approach">Approach</label>
+                <input id="settings-feed-approach" type="number" step="1" min="0.01" />
+                <label for="settings-feed-descend">Descend</label>
+                <input id="settings-feed-descend" type="number" step="1" min="0.01" />
+                <label for="settings-feed-extrude">Extrude</label>
+                <input id="settings-feed-extrude" type="number" step="0.1" min="0.01" />
+                <label for="settings-feed-retract">Retract</label>
+                <input id="settings-feed-retract" type="number" step="1" min="0.01" />
+                <label for="settings-feed-lift">Lift to safe</label>
+                <input id="settings-feed-lift" type="number" step="1" min="0.01" />
+                <label for="settings-feed-park">Final park</label>
+                <input id="settings-feed-park" type="number" step="1" min="0.01" />
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="user-issue-modal" class="user-issue-modal" hidden role="dialog" aria-modal="true" aria-labelledby="user-issue-modal-title">
       <div class="user-issue-modal-backdrop" id="user-issue-modal-backdrop"></div>
       <div class="user-issue-modal-panel">
@@ -407,6 +581,7 @@
     <script src="./simulator-2d.js"></script>
     <script src="./simulator-3d.js"></script>
     <script src="./simulator-app.js"></script>
+    <script src="./settings-panel.js"></script>
     <script src="./boot.js"></script>
   </body>
 </html>

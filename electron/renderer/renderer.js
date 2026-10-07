@@ -248,6 +248,26 @@ function focusIssueField(fieldId) {
   node.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
+function needleClearanceIssue(params, focusId = "spacing-x") {
+  const minW = Number(currentMotionSettings().minNeedleWidthMm);
+  if (!(minW > 0) || !params) return null;
+  const spacingX = Number(params.spacingX);
+  const spacingY = Number(params.spacingY);
+  const tightX = Number.isFinite(spacingX) && spacingX > 0 && spacingX < minW;
+  const tightY = Number.isFinite(spacingY) && spacingY > 0 && spacingY < minW;
+  if (!tightX && !tightY) return null;
+  return createUserIssue({
+    id: "NEEDLE_CLEARANCE",
+    title: "XY spacing below needle width",
+    message: `Dot spacing is tighter than the minimum needle width (${minW} mm). Increase spacing or lower the needle width in Settings.`,
+    fields: [
+      { label: "Dot Spacing X", id: "spacing-x" },
+      { label: "Dot Spacing Y", id: "spacing-y" },
+    ],
+    focusId,
+  });
+}
+
 function reportSaveFailure(issues, shortMessage) {
   const list = Array.isArray(issues) ? issues : [issues];
   el.saveStatus.textContent = shortMessage || list[0]?.message || "Save blocked.";
@@ -387,9 +407,12 @@ function initUserIssueModal() {
     focusIssueField(modalFocusTargetId);
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && el.userIssueModal && !el.userIssueModal.hidden) {
+    if (event.key !== "Escape") return;
+    if (el.userIssueModal && !el.userIssueModal.hidden) {
       hideUserIssueModal();
+      return;
     }
+    if (window.AppSettings?.isOpen?.()) window.AppSettings.close();
   });
 }
 
@@ -635,9 +658,7 @@ function applyWellDefaults(target, wellKey, plateTypeId = getCurrentPlateTypeId(
   syncGridDotsFromLayout(target.dots, target.perRow, target.rows);
   target.spacingX.value = "0.3";
   target.spacingY.value = "1.5";
-  target.lowerZ.value = DEFAULT_LOWER_Z_OFFSET.toFixed(2);
-  target.upperZ.value = DEFAULT_UPPER_Z_OFFSET.toFixed(2);
-  target.extrusionE.value = DEFAULT_EXTRUSION.toFixed(4);
+  applyPassDefaults(target);
   syncWellNumberFromDropdown();
 
   const starts = getWellStarts(plateTypeId);
@@ -1017,9 +1038,11 @@ function applyCircleDefaults(wellKey) {
   if (el.circleRadius) el.circleRadius.value = "3";
   if (el.circleStartAngle) el.circleStartAngle.value = "0";
   syncWellNumberFromDropdown();
-  el.lowerZ.value = DEFAULT_LOWER_Z_OFFSET.toFixed(2);
-  el.upperZ.value = DEFAULT_UPPER_Z_OFFSET.toFixed(2);
-  el.extrusionE.value = DEFAULT_EXTRUSION.toFixed(4);
+  applyPassDefaults({
+    lowerZ: el.lowerZ,
+    upperZ: el.upperZ,
+    extrusionE: el.extrusionE,
+  });
   circlePatternLastWell = wellKey;
   syncStoredStartsPicker(el.storedStartsCircle, wellKey);
 }
@@ -1294,17 +1317,19 @@ function paramsToGcode(params) {
 }
 
 function buildCombinedGcode(print1, print2, sameMode) {
-  return coreBuildCombinedGcode(print1, print2, sameMode, paramsToGcode);
+  return withInsertionJob(() => coreBuildCombinedGcode(print1, print2, sameMode, paramsToGcode));
 }
 
 function buildCombinedGcodeAllPasses() {
-  const print1 = collectPrint1Params();
-  const extras = collectAllExtraPrintParams().map((entry) => ({
-    params: entry.params,
-    sameMode: entry.sameMode,
-    passNum: entry.printNum,
-  }));
-  return buildCombinedMultiGcode(print1, extras, paramsToGcode);
+  return withInsertionJob(() => {
+    const print1 = collectPrint1Params();
+    const extras = collectAllExtraPrintParams().map((entry) => ({
+      params: entry.params,
+      sameMode: entry.sameMode,
+      passNum: entry.printNum,
+    }));
+    return buildCombinedMultiGcode(print1, extras, paramsToGcode);
+  });
 }
 
 function updateModeUi() {
@@ -1372,40 +1397,149 @@ function onPrint1PassInput() {
   drawPreview();
 }
 
-function appendDotSequence(lines, dotCoords, params, annotate, zApproach, zRetract, zSafe) {
+let insertionJobKeys = null;
+
+function withInsertionJob(fn) {
+  const outer = insertionJobKeys;
+  if (!outer) insertionJobKeys = new Set();
+  try {
+    return fn();
+  } finally {
+    if (!outer) insertionJobKeys = null;
+  }
+}
+
+function insertionKey(x, y) {
+  return `${formatCoordMm(x)},${formatCoordMm(y)}`;
+}
+
+function currentMotionSettings() {
+  return window.AppSettings?.motion?.() || {
+    annotate: true,
+    minNeedleWidthMm: 0.3,
+    allowSameInsertionPoint: true,
+    removePauseDwells: false,
+    defaultLowerZ: DEFAULT_LOWER_Z_OFFSET,
+    defaultUpperZ: DEFAULT_UPPER_Z_OFFSET,
+    defaultExtrusionE: DEFAULT_EXTRUSION,
+    zApproach: 4.71,
+    zRetract: 4.31,
+    zSafe: 6.21,
+    zPark: 23,
+    wellBottomZ: WELL_BOTTOM_Z,
+    feedXy: 350,
+    feedApproach: 250,
+    feedDescend: 30,
+    feedExtrude: 3,
+    feedRetract: 80,
+    feedLift: 350,
+    feedPark: 250,
+    pauseStartMs: 100,
+    pauseXyMs: 200,
+    pauseApproachMs: 200,
+    pauseLowerMs: 500,
+    dwellDispenseSec: 1.5,
+    pauseRetractMs: 750,
+    pauseSafeMs: 200,
+    pauseParkMs: 100,
+  };
+}
+
+function applyPassDefaults(target) {
+  if (!target?.lowerZ) return;
+  const defaults = window.AppSettings?.passDefaults?.() || {
+    lowerZ: DEFAULT_LOWER_Z_OFFSET,
+    upperZ: DEFAULT_UPPER_Z_OFFSET,
+    extrusionE: DEFAULT_EXTRUSION,
+  };
+  target.lowerZ.value = formatZMm(defaults.lowerZ);
+  target.upperZ.value = formatZMm(defaults.upperZ);
+  target.extrusionE.value = formatExtrusionE(defaults.extrusionE);
+}
+
+function formatMachineNumber(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "0";
+  if (Number.isInteger(n)) return String(n);
+  return String(Number(n.toFixed(4)));
+}
+
+function gcodeCmd(command, comment, annotate) {
+  return annotate && comment ? `${command}  ; ${comment}` : command;
+}
+
+function appendPause(lines, milliseconds, comment, annotate, motion) {
+  if (motion.removePauseDwells) return;
+  lines.push(gcodeCmd(
+    `G4 P${formatMachineNumber(milliseconds)}`,
+    comment,
+    annotate
+  ));
+}
+
+function appendDotSequence(lines, dotCoords, params, annotate) {
   const { lowerZ, upperZ, extrusionE } = params;
+  const motion = currentMotionSettings();
+  const allowSame = motion.allowSameInsertionPoint !== false;
+  const tracker = insertionJobKeys || new Set();
+  const xyFeed = formatMachineNumber(motion.feedXy);
+  const approachFeed = formatMachineNumber(motion.feedApproach);
+  const descendFeed = formatMachineNumber(motion.feedDescend);
+  const extrudeFeed = formatMachineNumber(motion.feedExtrude);
+  const retractFeed = formatMachineNumber(motion.feedRetract);
+  const liftFeed = formatMachineNumber(motion.feedLift);
   dotCoords.forEach((coord, dotIndex) => {
     const x = coord.absX;
     const y = coord.absY;
+    const key = insertionKey(x, y);
+    if (!allowSame && tracker.has(key)) {
+      lines.push("");
+      lines.push(`; Skip dot ${dotIndex + 1} — extrusion already performed at ${formatGcodeXY(x, y)}`);
+      return;
+    }
+    tracker.add(key);
     lines.push("");
     lines.push(`; Begin dot ${dotIndex + 1}`);
-    if (annotate) {
-      lines.push(`G1 ${formatGcodeXY(x, y)} F350  ; Move to dot position (X, Y) at 350 mm/min`);
-      lines.push(`G4 P200                ; Pause 200ms to stabilize`);
-      lines.push(`G1 Z${formatZMm(zApproach)} F250          ; Move down to approach height at 250 mm/min`);
-      lines.push(`G4 P200                ; Pause 200ms`);
-      lines.push(`G1 Z${formatZMm(lowerZ)} F30        ; Slowly descend to lower position (${formatZMm(lowerZ)}mm) at 30 mm/min`);
-      lines.push(`G4 P500                ; Pause 500ms at lower position`);
-      lines.push(`G1 Z${formatZMm(upperZ)} E ${formatExtrusionE(extrusionE)} F3 ; Move up to upper position (${formatZMm(upperZ)}mm), extrude ${formatExtrusionE(extrusionE)}, slow at 3 mm/min`);
-      lines.push(`G4 S1.5                ; Wait 1.5 seconds for dispensing`);
-      lines.push(`G1 Z${formatZMm(zRetract)} F80           ; Retract to ${formatZMm(zRetract)}mm at 80 mm/min`);
-      lines.push(`G4 P750                ; Pause 750ms`);
-      lines.push(`G1 Z${formatZMm(zSafe)} F350             ; Lift to safe height (${formatZMm(zSafe)}mm) at 350 mm/min`);
-      lines.push(`G4 P200                ; Final pause 200ms`);
-    } else {
-      lines.push(`G1 ${formatGcodeXY(x, y)} F350`);
-      lines.push(`G4 P200`);
-      lines.push(`G1 Z${formatZMm(zApproach)} F250`);
-      lines.push(`G4 P200`);
-      lines.push(`G1 Z${formatZMm(lowerZ)} F30`);
-      lines.push(`G4 P500`);
-      lines.push(`G1 Z${formatZMm(upperZ)} E ${formatExtrusionE(extrusionE)} F3`);
-      lines.push(`G4 S1.5`);
-      lines.push(`G1 Z${formatZMm(zRetract)} F80`);
-      lines.push(`G4 P750`);
-      lines.push(`G1 Z${formatZMm(zSafe)} F350`);
-      lines.push(`G4 P200`);
-    }
+    lines.push(gcodeCmd(
+      `G1 ${formatGcodeXY(x, y)} F${xyFeed}`,
+      `Move to dot position (X, Y) at ${xyFeed} mm/min`,
+      annotate
+    ));
+    appendPause(lines, motion.pauseXyMs, `Pause ${formatMachineNumber(motion.pauseXyMs)}ms to stabilize`, annotate, motion);
+    lines.push(gcodeCmd(
+      `G1 Z${formatZMm(motion.zApproach)} F${approachFeed}`,
+      `Move down to approach height at ${approachFeed} mm/min`,
+      annotate
+    ));
+    appendPause(lines, motion.pauseApproachMs, `Pause ${formatMachineNumber(motion.pauseApproachMs)}ms`, annotate, motion);
+    lines.push(gcodeCmd(
+      `G1 Z${formatZMm(lowerZ)} F${descendFeed}`,
+      `Slowly descend to lower position (${formatZMm(lowerZ)}mm) at ${descendFeed} mm/min`,
+      annotate
+    ));
+    appendPause(lines, motion.pauseLowerMs, `Pause ${formatMachineNumber(motion.pauseLowerMs)}ms at lower position`, annotate, motion);
+    lines.push(gcodeCmd(
+      `G1 Z${formatZMm(upperZ)} E ${formatExtrusionE(extrusionE)} F${extrudeFeed}`,
+      `Move up to upper position (${formatZMm(upperZ)}mm), extrude ${formatExtrusionE(extrusionE)}, slow at ${extrudeFeed} mm/min`,
+      annotate
+    ));
+    lines.push(gcodeCmd(
+      `G4 S${formatMachineNumber(motion.dwellDispenseSec)}`,
+      `Wait ${formatMachineNumber(motion.dwellDispenseSec)} seconds for dispensing`,
+      annotate
+    ));
+    lines.push(gcodeCmd(
+      `G1 Z${formatZMm(motion.zRetract)} F${retractFeed}`,
+      `Retract to ${formatZMm(motion.zRetract)}mm at ${retractFeed} mm/min`,
+      annotate
+    ));
+    appendPause(lines, motion.pauseRetractMs, `Pause ${formatMachineNumber(motion.pauseRetractMs)}ms`, annotate, motion);
+    lines.push(gcodeCmd(
+      `G1 Z${formatZMm(motion.zSafe)} F${liftFeed}`,
+      `Lift to safe height (${formatZMm(motion.zSafe)}mm) at ${liftFeed} mm/min`,
+      annotate
+    ));
+    appendPause(lines, motion.pauseSafeMs, `Final pause ${formatMachineNumber(motion.pauseSafeMs)}ms`, annotate, motion);
   });
 }
 
@@ -1418,9 +1552,7 @@ function buildGcode(params) {
     day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit",
   }).replace(",", "");
 
-  const zApproach = 4.71;
-  const zRetract = 4.31;
-  const zSafe = 6.21;
+  const motion = currentMotionSettings();
   const wellLetter = /^[A-Za-z]/.test(wellNumber) ? wellNumber[0].toUpperCase() : "A";
   const rowNum = wellLetter.charCodeAt(0) - "A".charCodeAt(0) + 1;
   const lines = [];
@@ -1428,7 +1560,7 @@ function buildGcode(params) {
   lines.push(`; G-code generated ${now}`);
   lines.push(`; Well ${wellNumber} | Lower Z ${formatZMm(lowerZ)} mm | Upper Z ${formatZMm(upperZ)} mm | E ${formatExtrusionE(extrusionE)}`);
   lines.push("");
-  lines.push(`BottomElevation: ${formatZMm(WELL_BOTTOM_Z)}`);
+  lines.push(`BottomElevation: ${formatZMm(motion.wellBottomZ)}`);
   lines.push("; Zbottom: ");
   lines.push("; Zplus: ");
   lines.push("; Zplusplus: ");
@@ -1438,8 +1570,14 @@ function buildGcode(params) {
   lines.push(`; Well number ${wellNumber}`);
   lines.push("");
   lines.push("M83");
-  lines.push("");
-  lines.push("G4 P100");
+  if (!motion.removePauseDwells) {
+    lines.push("");
+    lines.push(gcodeCmd(
+      `G4 P${formatMachineNumber(motion.pauseStartMs)}`,
+      `Start pause ${formatMachineNumber(motion.pauseStartMs)}ms`,
+      annotate
+    ));
+  }
   lines.push("");
 
   const dotCoords = resolveParamsDots({
@@ -1455,20 +1593,24 @@ function buildGcode(params) {
     lines,
     dotCoords,
     { lowerZ, upperZ, extrusionE },
-    annotate,
-    zApproach,
-    zRetract,
-    zSafe
+    annotate
   );
   lines.push("");
   lines.push("; === End sequence ===");
-  if (annotate) {
-    lines.push("G1 Z23 F250            ; Move to final safe height (23mm) at 250 mm/min");
-    lines.push("G4 P100                ; Final pause 100ms");
-  } else {
-    lines.push("G1 Z23 F250");
-    lines.push("G4 P100");
-  }
+  const parkFeed = formatMachineNumber(motion.feedPark);
+  const parkZ = formatZMm(motion.zPark);
+  lines.push(gcodeCmd(
+    `G1 Z${parkZ} F${parkFeed}`,
+    `Move to final safe height (${parkZ}mm) at ${parkFeed} mm/min`,
+    annotate
+  ));
+  appendPause(
+    lines,
+    motion.pauseParkMs,
+    `Final pause ${formatMachineNumber(motion.pauseParkMs)}ms`,
+    annotate,
+    motion
+  );
   return lines.join("\n");
 }
 
@@ -2530,6 +2672,11 @@ async function saveGcode() {
     reportSaveFailure(issueForValidationError(err, { focusId: "start-x" }), err);
     return;
   }
+  const needleIssue = needleClearanceIssue(print1);
+  if (needleIssue) {
+    reportSaveFailure(needleIssue, needleIssue.message);
+    return;
+  }
   await saveGcodeFile(paramsToGcode(print1), defaultFileNameForParams(print1, ""));
 }
 
@@ -2544,6 +2691,11 @@ async function savePrint1Gcode() {
   const err = validatePrintParams(print1);
   if (err) {
     reportSaveFailure(issueForValidationError(err, { focusId: "start-x" }), err);
+    return;
+  }
+  const needleIssue = needleClearanceIssue(print1);
+  if (needleIssue) {
+    reportSaveFailure(needleIssue, needleIssue.message);
     return;
   }
   await saveGcodeFile(paramsToGcode(print1), defaultMultiPrintSaveFileName(print1, "_print1"));
@@ -2597,6 +2749,11 @@ async function saveExtraPrintGcode(printNum) {
     reportSaveFailure(issueForAngleOffset(errAngle, printNum), errAngle);
     return;
   }
+  const needleIssue = needleClearanceIssue(print2, `p${printNum}-spacing-x`);
+  if (needleIssue) {
+    reportSaveFailure(needleIssue, needleIssue.message);
+    return;
+  }
   await saveGcodeFile(
     paramsToGcode(print2),
     defaultMultiPrintSaveFileName(print2, `_print${printNum}`, printNum)
@@ -2614,6 +2771,11 @@ async function saveCombinedGcode() {
   const err1 = validatePrintParams(print1);
   if (err1) {
     reportSaveFailure(issueForValidationError(err1, { focusId: "start-x" }), err1);
+    return;
+  }
+  const needleIssue = needleClearanceIssue(print1);
+  if (needleIssue) {
+    reportSaveFailure(needleIssue, needleIssue.message);
     return;
   }
 
@@ -2655,6 +2817,11 @@ async function saveCombinedGcode() {
       reportSaveFailure(issueForAngleOffset(errAngle, printNum), errAngle);
       return;
     }
+    const extraNeedleIssue = needleClearanceIssue(params, `p${printNum}-spacing-x`);
+    if (extraNeedleIssue) {
+      reportSaveFailure(extraNeedleIssue, extraNeedleIssue.message);
+      return;
+    }
   }
 
   const passCount = getExtraPassList().length + 1;
@@ -2691,6 +2858,11 @@ function validateBulkExport() {
       focusId: "start-x",
     }));
     return { error: refErr, issues };
+  }
+  const needleIssue = needleClearanceIssue(ref);
+  if (needleIssue) {
+    issues.push(needleIssue);
+    return { error: needleIssue.message, issues };
   }
   const outsideFailures = collectBulkWellOutsideFailures(wells);
   if (outsideFailures.length) {
@@ -3078,6 +3250,11 @@ function bootApp() {
     initStoredStartsDropdowns();
     initBulkPrint();
     initCirclePrint();
+    window.AppSettings?.init({
+      onApplied() {
+        drawPreview();
+      },
+    });
     setDefaultsFromCurrentWell();
     initTabs();
     window.GcodeMotionSimulator?.init({
